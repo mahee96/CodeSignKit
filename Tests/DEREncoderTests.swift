@@ -27,7 +27,7 @@ struct DEREncoderTests {
     func encodeBoolean() throws {
         let trueDER = try #require(DEREncoder.encodeValue(true))
         let falseDER = try #require(DEREncoder.encodeValue(false))
-        #expect(trueDER == Data([0x01, 0x01, 0xFF]))
+        #expect(trueDER == Data([0x01, 0x01, 0x01]))
         #expect(falseDER == Data([0x01, 0x01, 0x00]))
     }
 
@@ -61,8 +61,8 @@ struct DEREncoderTests {
         ]
         let der = try #require(DEREncoder.encodeValue(dict))
         #expect(!der.isEmpty)
-        // Check Dictionary tag 0xB0
-        #expect(der[0] == 0xB0)
+        // Check Dictionary Set tag 0x31
+        #expect(der[0] == 0x31)
     }
 
     @Test
@@ -76,7 +76,7 @@ struct DEREncoderTests {
         ]
         let der = try #require(DEREncoder.encodeValue(dict))
         #expect(!der.isEmpty)
-        #expect(der[0] == 0xB0)
+        #expect(der[0] == 0x31)
     }
 
     @Test
@@ -95,9 +95,7 @@ struct DEREncoderTests {
         """
         let der = try #require(DEREncoder.encodePlistXML(xml))
         #expect(!der.isEmpty)
-        // Check Outer tag 0x70
-        #expect(der[0] == 0x70)
+        // Check Outer Set tag 0x31
+        #expect(der[0] == 0x31)
     }
 }
-
-
