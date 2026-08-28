@@ -10,7 +10,7 @@ A high-performance, pure Swift Mach-O parser, CodeDirectory generator, CodeResou
 - **CodeDirectory Generation**: Generates `CS_CodeDirectory` structures with configurable hash types (SHA-1, SHA-256), page hashes, executive segment limits, flags, and slot hashing.
 - **Sealed CodeResources**: Recursively traverses and seals app bundles into `_CodeSignature/CodeResources` XML property lists with dual SHA-1 and SHA-256 digests.
 - **SuperBlob Assembly**: Builds compliant `CSMAGIC_EMBEDDED_SIGNATURE` SuperBlobs containing CodeDirectory, Requirements, Entitlements (XML & DER), and CMS Signatures.
-- **CMS / PKCS#7 Signatures**: Generates RFC 5652 CMS / PKCS#7 detached signatures using OpenSSL and CryptoKit.
+- **CMS / PKCS#7 Signatures**: Generates RFC 5652 CMS / PKCS#7 detached signatures using pure Swift (`swift-crypto` and `swift-asn1`).
 - **Recursive Bundle Signing**: Automatically signs embedded frameworks, dynamic libraries (`.dylib`), app extensions (`.appex`), and parent application bundles in correct hierarchical dependency order.
 - **Entitlements Extraction**: Reads, parses, and extracts embedded XML entitlements and code requirements directly from unsigned or signed Mach-O binaries.
 
@@ -18,13 +18,13 @@ A high-performance, pure Swift Mach-O parser, CodeDirectory generator, CodeResou
 
 ## Platforms Supported
 
-| Platform                          | Signing Mode | Dependency Requirements         |
-| :-------------------------------- | :----------- | :------------------------------ |
-| **iOS (Real Device & Simulator)** | In-Process   | Requires OpenSSL on client side |
-| **macOS (ARM64 & x86_64)**        | In-Process   | Requires OpenSSL on client side |
-| **tvOS (Device & Simulator)**     | In-Process   | Requires OpenSSL on client side |
-| **visionOS (Device & Simulator)** | In-Process   | Requires OpenSSL on client side |
-| **Linux (ARM64 & x86_64)**        | In-Process   | Requires OpenSSL on client side |
+| Platform                          | Signing Mode | Dependency Requirements        |
+| :-------------------------------- | :----------- | :----------------------------- |
+| **iOS (Real Device & Simulator)** | In-Process   | (`swift-crypto`, `swift-asn1`) |
+| **macOS (ARM64 & x86_64)**        | In-Process   | (`swift-crypto`, `swift-asn1`) |
+| **tvOS (Device & Simulator)**     | In-Process   | (`swift-crypto`, `swift-asn1`) |
+| **visionOS (Device & Simulator)** | In-Process   | (`swift-crypto`, `swift-asn1`) |
+| **Linux (ARM64 & x86_64)**        | In-Process   | (`swift-crypto`, `swift-asn1`) |
 
 ---
 

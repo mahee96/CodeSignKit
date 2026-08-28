@@ -7,7 +7,7 @@
 //
 
 import Foundation
-import CryptoKit
+import Crypto
 
 public struct RequirementsBuilder {
     private static let opAnd: UInt32 = 6

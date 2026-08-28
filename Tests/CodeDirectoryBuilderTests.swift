@@ -8,7 +8,7 @@
 
 import Testing
 import Foundation
-import CryptoKit
+import Crypto
 @testable import CodeSignKit
 
 @Suite

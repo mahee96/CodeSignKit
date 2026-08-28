@@ -228,7 +228,7 @@ struct MachOSignerTests {
     func appleCodeSignOnSyntheticGeneratedBinary(isFat: Bool) throws {
         let binary = try TestFixtures.compileRealMachOBinary(fat: isFat)
         let (p12Data, _, _) = try TestFixtures.createSelfSignedP12(password: "test")
-        let cms = try CMSSigner(p12Data: p12Data, password: "test")
+        let cms = CMSSigner(p12Data: p12Data, password: "test")
 
         let signer = MachOSigner(
             binaryData: binary,
@@ -258,7 +258,7 @@ struct MachOSignerTests {
     func signRealCompiledMachOBinary() throws {
         let realBinary = try TestFixtures.compileRealMachOBinary(fat: false)
         let (p12Data, _, _) = try TestFixtures.createSelfSignedP12(password: "test")
-        let cms = try CMSSigner(p12Data: p12Data, password: "test")
+        let cms = CMSSigner(p12Data: p12Data, password: "test")
 
         let signer = MachOSigner(
             binaryData: realBinary,
@@ -299,7 +299,7 @@ struct MachOSignerTests {
     func signRealFatMachOBinary() throws {
         let fatBinary = try TestFixtures.compileRealMachOBinary(fat: true)
         let (p12Data, _, _) = try TestFixtures.createSelfSignedP12(password: "test")
-        let cms = try CMSSigner(p12Data: p12Data, password: "test")
+        let cms = CMSSigner(p12Data: p12Data, password: "test")
 
         let signer = MachOSigner(
             binaryData: fatBinary,

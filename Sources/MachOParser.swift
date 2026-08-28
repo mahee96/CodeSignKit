@@ -8,7 +8,7 @@
 
 
 import Foundation
-import CryptoKit
+import Crypto
 
 public enum MachOParserError: Error {
     case invalidMachO       // The binary structure is invalid or malformed.

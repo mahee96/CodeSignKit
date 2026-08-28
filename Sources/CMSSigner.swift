@@ -6,13 +6,12 @@
 //  Copyright © 2026 CodeSignKit. All rights reserved.
 //
 
-
 import Foundation
-import OpenSSL
-import CryptoKit
+import Crypto
+import CryptoExtras
+import SwiftASN1
 
 public final class CMSSigner {
-
 
     // Apple Root Certificate (PEM)
     public static let AppleRootCertPEM = """
@@ -76,25 +75,8 @@ public final class CMSSigner {
     -----END CERTIFICATE-----
     """
 
-    // Apple CDHashes ASN.1 OID (1.2.840.113635.100.9.1)
-    public static let appleCDHashesOID = "1.2.840.113635.100.9.1"
+    public static let appleCDHashesOID  = "1.2.840.113635.100.9.1"
     public static let appleCDHashes2OID = "1.2.840.113635.100.9.2"
-
-    private static func resolveAppleCDHashesNID() -> Int32 {
-        var nid = OBJ_txt2nid(appleCDHashesOID)
-        if nid == NID_undef {
-            nid = OBJ_create(appleCDHashesOID, "apple-cdhashes", "Apple CDHashes")
-        }
-        return nid
-    }
-
-    private static func resolveAppleCDHashes2NID() -> Int32 {
-        var nid = OBJ_txt2nid(appleCDHashes2OID)
-        if nid == NID_undef {
-            nid = OBJ_create(appleCDHashes2OID, "apple-cdhashes2", "Apple CDHashes 2")
-        }
-        return nid
-    }
 
     private let p12Data: Data
     private let password: String
@@ -105,178 +87,139 @@ public final class CMSSigner {
     }
 
     public func getLeafCertificateSHA1() -> Data? {
-
-        _ = OSSL_PROVIDER_load(nil, "legacy")
-        _ = OSSL_PROVIDER_load(nil, "default")
-
-        let bio = BIO_new(BIO_s_mem())
-        defer { BIO_free(bio) }
-
-        _ = p12Data.withUnsafeBytes { buf in
-            BIO_write(bio, buf.baseAddress, Int32(p12Data.count))
-        }
-
-        guard let p12 = d2i_PKCS12_bio(bio, nil) else { return nil }
-        defer { PKCS12_free(p12) }
-
-        var pkey: OpaquePointer? = nil
-        var cert: OpaquePointer? = nil
-        var caStack: OpaquePointer? = nil
-
-        let passCString = password.cString(using: .utf8)
-        guard PKCS12_parse(p12, passCString, &pkey, &cert, &caStack) == 1, let cert = cert else {
+        guard let parser = try? PKCS12Parser(p12Data: p12Data, password: password) else {
             return nil
         }
-        defer {
-            if let pkey { EVP_PKEY_free(pkey) }
-            X509_free(cert)
-            if let caStack {
-                OPENSSL_sk_pop_free(caStack) { X509_free(OpaquePointer($0)) }
-            }
-        }
-
-        var md = [UInt8](repeating: 0, count: Int(EVP_MAX_MD_SIZE))
-        var len: UInt32 = 0
-        guard X509_digest(cert, EVP_sha1(), &md, &len) == 1, len == 20 else {
-            return nil
-        }
-        return Data(md.prefix(Int(len)))
+        return parser.leafCertificate?.sha1Fingerprint
     }
 
     public func sign(codeDirectoryData: Data) throws -> Data {
-        _ = OSSL_PROVIDER_load(nil, "legacy")
-        _ = OSSL_PROVIDER_load(nil, "default")
+        let parser = try PKCS12Parser(p12Data: p12Data, password: password)
 
-        let bio = BIO_new(BIO_s_mem())
-        defer { BIO_free(bio) }
-
-        _ = p12Data.withUnsafeBytes { buf in
-            BIO_write(bio, buf.baseAddress, Int32(p12Data.count))
+        guard let leafCert = parser.leafCertificate,
+              let rsaPrivateKey = parser.rsaPrivateKey else {
+            throw CodeSignerError.certificateError("Missing certificate or private key in PKCS#12")
         }
 
-        guard let p12 = d2i_PKCS12_bio(bio, nil) else {
-            throw CodeSignerError.certificateError("Failed to parse PKCS#12 signing data")
-        }
+        // 1. Compute CDHash (SHA-256)
+        let cdHash = Data(SHA256.hash(data: codeDirectoryData))
 
-        defer { PKCS12_free(p12) }
+        // 2. Build SignedAttributes
+        // 2a. Content Type (1.2.840.113549.1.9.3) -> data (1.2.840.113549.1.7.1)
+        let attrContentType = ASN1Helper.sequence(
+            ASN1Helper.oidContentType +
+            ASN1Helper.set(ASN1Helper.oidData)
+        )
 
-        var pkey: OpaquePointer? = nil
-        var cert: OpaquePointer? = nil
-        var caStack: OpaquePointer? = nil
+        // 2b. Signing Time (1.2.840.113549.1.9.5) -> UTCTime
+        let attrSigningTime = ASN1Helper.sequence(
+            ASN1Helper.oidSigningTime +
+            ASN1Helper.set(ASN1Helper.utcTime(Date()))
+        )
 
-        let passCString = password.cString(using: .utf8)
-        guard PKCS12_parse(p12, passCString, &pkey, &cert, &caStack) == 1, let pkey = pkey, let cert = cert else {
-            throw CodeSignerError.certificateError("Failed to extract private key and certificate from PKCS#12")
-        }
-        defer {
-            EVP_PKEY_free(pkey)
-            X509_free(cert)
-            if let caStack {
-                OPENSSL_sk_pop_free(caStack) { X509_free(OpaquePointer($0)) }
-            }
-        }
-        // Initialize CMS structure
-        let dataBio = BIO_new_mem_buf(codeDirectoryData.withUnsafeBytes { $0.baseAddress }, Int32(codeDirectoryData.count))
-        defer { BIO_free(dataBio) }
+        // 2c. Message Digest (1.2.840.113549.1.9.4) -> SHA-256 of codeDirectoryData
+        let attrMessageDigest = ASN1Helper.sequence(
+            ASN1Helper.oidMessageDigest +
+            ASN1Helper.set(ASN1Helper.octetString(cdHash))
+        )
 
-        guard let cms = CMS_sign(nil, nil, nil, nil, UInt32(CMS_PARTIAL | CMS_DETACHED | CMS_BINARY | CMS_NOSMIMECAP)) else {
-            throw CodeSignerError.signingFailed("Failed to create CMS structure")
-        }
-        defer { CMS_ContentInfo_free(cms) }
+        // 2d. Apple CDHashes 2 (1.2.840.113635.100.9.2) -> SET OF SEQUENCE { sha256 OID, OCTET STRING cdHash }
+        let cdHashSeq = ASN1Helper.sequence(
+            ASN1Helper.oidSHA256 +
+            ASN1Helper.octetString(cdHash)
+        )
+        let attrAppleCDHashes2 = ASN1Helper.sequence(
+            ASN1Helper.oidAppleCDHashes2 +
+            ASN1Helper.set(cdHashSeq)
+        )
 
-        // Add signer
-        guard let signerInfo = CMS_add1_signer(cms, cert, pkey, EVP_sha256(), UInt32(CMS_PARTIAL | CMS_NOSMIMECAP | CMS_BINARY)) else {
-            throw CodeSignerError.signingFailed("Failed to add signer to CMS")
-        }
-
-        // Add CA certificates if any
-        if let caStack {
-            let numCAs = OPENSSL_sk_num(caStack)
-            for i in 0..<numCAs {
-                if let caCert = OPENSSL_sk_value(caStack, i) {
-                    CMS_add1_cert(cms, OpaquePointer(caCert))
-                }
-            }
-        }
-
-        // Add Apple CDHash sequence (1.2.840.113635.100.9.2)
-        let cdHash = SHA256.hash(data: codeDirectoryData)
-        let cdHashData = Data(cdHash)
-        let appleNID2 = Self.resolveAppleCDHashes2NID()
-        if appleNID2 != NID_undef {
-            var seq = Data([0x30, 0x2D, 0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x01, 0x04, 0x20])
-            seq.append(cdHashData)
-            seq.withUnsafeBytes { raw in
-                if let base = raw.baseAddress?.assumingMemoryBound(to: UInt8.self) {
-                    var p: UnsafePointer<UInt8>? = base
-                    if let asn1 = d2i_ASN1_TYPE(nil, &p, seq.count) {
-                        CMS_signed_add1_attr_by_NID(signerInfo, appleNID2, Int32(asn1.pointee.type), asn1.pointee.value.ptr, -1)
-                        ASN1_TYPE_free(asn1)
-                    }
-                }
-            }
-        }
-
-        // Add Apple CDHash plist (1.2.840.113635.100.9.1)
-        let truncatedCDHash = cdHashData.prefix(20)
+        // 2e. Apple CDHashes 1 (1.2.840.113635.100.9.1) -> OCTET STRING (XML plist containing cdhashes)
+        let truncatedCDHash = cdHash.prefix(20)
         let plistDict: [String: Any] = ["cdhashes": [truncatedCDHash]]
         let plistData = (try? PropertyListSerialization.data(fromPropertyList: plistDict, format: .xml, options: 0)) ?? Data()
+        let attrAppleCDHashes1 = ASN1Helper.sequence(
+            ASN1Helper.oidAppleCDHashes +
+            ASN1Helper.set(ASN1Helper.octetString(plistData))
+        )
 
+        // 3. Sort signed attributes in ascending DER lexicographical order
+        let rawAttributes = [attrContentType, attrSigningTime, attrMessageDigest, attrAppleCDHashes2, attrAppleCDHashes1]
+        let sortedAttributes = rawAttributes.sorted { $0.lexicographicallyPrecedes($1) }
 
-        let appleNID1 = Self.resolveAppleCDHashesNID()
-        if appleNID1 != NID_undef, let octetStr = ASN1_OCTET_STRING_new() {
-            _ = plistData.withUnsafeBytes { raw in
-                ASN1_OCTET_STRING_set(octetStr, raw.baseAddress?.assumingMemoryBound(to: UInt8.self), Int32(raw.count))
-            }
-            CMS_signed_add1_attr_by_NID(signerInfo, appleNID1, V_ASN1_OCTET_STRING, UnsafeRawPointer(octetStr), -1)
-            ASN1_OCTET_STRING_free(octetStr)
+        var signedAttrsContent = Data()
+        for attr in sortedAttributes {
+            signedAttrsContent.append(attr)
         }
 
-        // Finalize CMS
-        _ = BIO_ctrl(dataBio, 1 /* BIO_CTRL_RESET */, 0, nil)
-        guard CMS_final(cms, dataBio, nil, UInt32(CMS_DETACHED | CMS_BINARY)) == 1 else {
-            throw CodeSignerError.signingFailed("Failed to finalize CMS signature")
+        // The bytes to sign are encoded as a DER SET (tag 0x31)
+        let signedAttrsSetDER = ASN1Helper.set(signedAttrsContent)
+
+        // 4. Compute RSA-SHA256 signature (PKCS#1 v1.5) over signedAttrsSetDER
+        let digestToSign = SHA256.hash(data: signedAttrsSetDER)
+        let signatureData: Data
+        do {
+            let sig = try rsaPrivateKey.signature(for: digestToSign, padding: .insecurePKCS1v1_5)
+            signatureData = sig.rawRepresentation
+        } catch {
+            throw CodeSignerError.signingFailed("Failed to compute RSA signature: \(error.localizedDescription)")
         }
 
-        // Adjust signature algorithm OID to sha256WithRSAEncryption if using RSA
-        var psigAlg: UnsafeMutablePointer<X509_ALGOR>? = nil
-        CMS_SignerInfo_get0_algs(signerInfo, nil, nil, nil, &psigAlg)
-        if let psigAlg {
-            X509_ALGOR_set0(psigAlg, OBJ_nid2obj(NID_sha256WithRSAEncryption), V_ASN1_NULL, nil)
+        // 5. Build SignerInfo
+        // sid: IssuerAndSerialNumber: SEQUENCE { issuer Name, serialNumber CertificateSerialNumber }
+        let issuerAndSerial = ASN1Helper.sequence(leafCert.issuerDER + leafCert.serialNumberDER)
+        let digestAlg = ASN1Helper.algorithmIdentifier(oidData: ASN1Helper.oidSHA256, hasNullParam: false)
+        let signedAttrsContextual = ASN1Helper.contextual(0, content: signedAttrsContent, constructed: true)
+        let sigAlg = ASN1Helper.algorithmIdentifier(oidData: ASN1Helper.oidSha256WithRSAEncryption, hasNullParam: true)
+        let sigOctet = ASN1Helper.octetString(signatureData)
+
+        let signerInfo = ASN1Helper.sequence(
+            ASN1Helper.integer(1) + // version 1
+            issuerAndSerial +
+            digestAlg +
+            signedAttrsContextual +
+            sigAlg +
+            sigOctet
+        )
+
+        // 6. Build Certificates Set [0] IMPLICIT
+        var allCertsContent = leafCert.rawDER
+        for ca in parser.intermediateCertificates {
+            allCertsContent.append(ca.rawDER)
         }
+        let certificatesContextual = ASN1Helper.contextual(0, content: allCertsContent, constructed: true)
 
+        // 7. Build EncapsulatedContentInfo (detached: eContent omitted)
+        let encapContentInfo = ASN1Helper.sequence(
+            ASN1Helper.oidData
+        )
 
+        // 8. Build SignedData
+        let signedData = ASN1Helper.sequence(
+            ASN1Helper.integer(1) + // version 1
+            ASN1Helper.set(digestAlg) + // digestAlgorithms
+            encapContentInfo +
+            certificatesContextual +
+            ASN1Helper.set(signerInfo)
+        )
 
+        // 9. Build ContentInfo
+        let contentInfo = ASN1Helper.sequence(
+            ASN1Helper.oidSignedData +
+            ASN1Helper.contextual(0, content: signedData, constructed: true)
+        )
 
-        // Export CMS DER
-        let outBio = BIO_new(BIO_s_mem())
-        defer { BIO_free(outBio) }
-
-        guard i2d_CMS_bio(outBio, cms) == 1 else {
-            throw CodeSignerError.signingFailed("Failed to serialize CMS DER")
-        }
-
-        var derPtr: UnsafeMutablePointer<CChar>? = nil
-        let derLen = Int(BIO_ctrl(outBio, 3 /* BIO_CTRL_INFO */, 0, &derPtr))
-        guard derLen > 0, let derPtr = derPtr else {
-            throw CodeSignerError.signingFailed("Failed to extract CMS DER bytes")
-        }
-
-        let rawDER = Data(bytes: derPtr, count: derLen)
-
-        // Wrap in BlobWrapper (0xfade0b01)
-        let totalWrapperSize = 8 + rawDER.count
+        // 10. Wrap in BlobWrapper (0xfade0b01)
+        let totalWrapperSize = 8 + contentInfo.count
         var wrapper = Data(count: totalWrapperSize)
         wrapper.writeUInt32BigEndian(CodeSigningConstants.CSMAGIC_BLOBWRAPPER, at: 0)
         wrapper.writeUInt32BigEndian(UInt32(totalWrapperSize), at: 4)
-        wrapper.replaceSubrange(8..<totalWrapperSize, with: rawDER)
+        wrapper.replaceSubrange(8..<totalWrapperSize, with: contentInfo)
 
         return wrapper
     }
 }
 
 fileprivate extension Data {
-
     mutating func writeUInt32BigEndian(_ value: UInt32, at offset: Int) {
         var bigEndian = value.bigEndian
         Swift.withUnsafeBytes(of: &bigEndian) { bytes in
@@ -284,4 +227,3 @@ fileprivate extension Data {
         }
     }
 }
-

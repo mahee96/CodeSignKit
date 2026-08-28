@@ -80,7 +80,7 @@ struct SignatureVerifierTests {
         let realBinary = try TestFixtures.compileRealMachOBinary(fat: false)
 
         let (p12Data, _, _) = try TestFixtures.createSelfSignedP12(password: "test")
-        let cms = try CMSSigner(p12Data: p12Data, password: "test")
+        let cms = CMSSigner(p12Data: p12Data, password: "test")
 
         let signer = MachOSigner(
             binaryData: realBinary,

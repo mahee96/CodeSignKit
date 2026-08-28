@@ -6,7 +6,10 @@ let package = Package(
     name: "CodeSignKit",
     platforms: [
         .iOS(.v14),
-        .macOS(.v11)
+        .macOS(.v11),
+        .tvOS(.v14),
+        .watchOS(.v7),
+        .visionOS(.v1)
     ],
     products: [
         .library(
@@ -18,7 +21,10 @@ let package = Package(
             targets: ["codesigntoolkit"]
         )
     ],
-    dependencies: [],
+    dependencies: [
+        .package(url: "https://github.com/apple/swift-crypto.git", "4.0.0" ..< "5.0.0"),
+        .package(url: "https://github.com/apple/swift-asn1.git",   "1.0.0" ..< "2.0.0")
+    ],
     targets: [
         .binaryTarget(
             name: "OpenSSL",
@@ -28,7 +34,9 @@ let package = Package(
         .target(
             name: "CodeSignKit",
             dependencies: [
-                .target(name: "OpenSSL")
+                .product(name: "Crypto",        package: "swift-crypto"),
+                .product(name: "CryptoExtras",  package: "swift-crypto"),
+                .product(name: "SwiftASN1",     package: "swift-asn1")
             ],
             path: "Sources"
         ),
@@ -42,11 +50,13 @@ let package = Package(
         .testTarget(
             name: "CodeSignKitTests",
             dependencies: [
-                "CodeSignKit"
+                "CodeSignKit",
+                .product(name: "Crypto",        package: "swift-crypto"),
+                .product(name: "CryptoExtras",  package: "swift-crypto"),
+                .product(name: "SwiftASN1",     package: "swift-asn1"),
+                .target(name: "OpenSSL")
             ],
             path: "Tests"
         )
     ]
 )
-
-

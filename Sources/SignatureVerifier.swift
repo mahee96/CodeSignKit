@@ -7,8 +7,9 @@
 //
 
 import Foundation
-import CryptoKit
-import OpenSSL
+import Crypto
+import CryptoExtras
+import SwiftASN1
 
 public struct VerificationResult {
     public let isValid: Bool
@@ -96,6 +97,7 @@ public final class SignatureVerifier {
             )
         }
     }
+
     private static func verifyThinBinary(sliceData: Data, path: String) -> VerificationResult {
         let parser = MachOParser(data: sliceData)
 
@@ -153,7 +155,6 @@ public final class SignatureVerifier {
     }
 
     private static func verifyFatBinary(binaryData: Data, path: String) -> VerificationResult {
-
         let is64 = (binaryData.readUInt32(at: 0) == CodeSigningConstants.FAT_MAGIC_64 ||
                     binaryData.readUInt32(at: 0) == CodeSigningConstants.FAT_CIGAM_64)
         let swap = (binaryData.readUInt32(at: 0) == CodeSigningConstants.FAT_CIGAM ||
@@ -213,7 +214,6 @@ public final class SignatureVerifier {
     private static func verifyBundle(at bundleURL: URL, deep: Bool, strict: Bool) -> VerificationResult {
         var errors: [String] = []
         let warnings: [String] = []
-
 
         guard let executableURL = MachOParser.findExecutable(at: bundleURL) else {
             return VerificationResult(
@@ -372,52 +372,129 @@ public final class SignatureVerifier {
             }
         }
 
-        let inBio = BIO_new(BIO_s_mem())
-        defer { BIO_free(inBio) }
-        _ = derData.withUnsafeBytes { raw in
-            BIO_write(inBio, raw.baseAddress, Int32(raw.count))
-        }
-
-        guard let cms = d2i_CMS_bio(inBio, nil) else {
+        // Parse ContentInfo: SEQUENCE { contentType OBJECT IDENTIFIER, content [0] EXPLICIT SignedData }
+        guard let ciTLV = ASN1Helper.parseTLV(from: derData), ciTLV.tag == 0x30 else {
             return (false, nil, "Failed to parse CMS signature ASN.1 structure")
         }
-        defer { CMS_ContentInfo_free(cms) }
 
-        // Extract signer certificate subject
-        var subjectName: String? = nil
-        if let certStack = CMS_get1_certs(cms) {
-            let count = OPENSSL_sk_num(certStack)
-            for idx in 0..<count {
-                if let rawVal = OPENSSL_sk_value(certStack, idx) {
-                    let cert = OpaquePointer(rawVal)
-                    if subjectName == nil, let namePtr = X509_get_subject_name(cert) {
-                        var buffer = [CChar](repeating: 0, count: 256)
-                        X509_NAME_oneline(namePtr, &buffer, Int32(buffer.count))
-                        subjectName = String(cString: buffer)
+        let ciChildren = ASN1Helper.parseSequenceChildren(from: ciTLV.value)
+        guard ciChildren.count >= 2 else {
+            return (false, nil, "Invalid CMS ContentInfo structure")
+        }
+
+        guard let signedDataTLV = ASN1Helper.parseTLV(from: ciChildren[1].value) else {
+            return (false, nil, "Missing SignedData in CMS structure")
+        }
+
+        // SignedData: SEQUENCE { version, digestAlgorithms, encapContentInfo, certificates [0] IMPLICIT OPTIONAL, crls, signerInfos }
+        let sdChildren = ASN1Helper.parseSequenceChildren(from: signedDataTLV.value)
+        guard sdChildren.count >= 3 else {
+            return (false, nil, "Invalid SignedData sequence")
+        }
+
+        var certificates: [X509Certificate] = []
+        var signerInfosData: Data? = nil
+
+        for child in sdChildren {
+            if (child.tag & 0xC0) == 0x80 && (child.tag & 0x1F) == 0 { // [0] IMPLICIT certificates
+                let certs = ASN1Helper.parseSequenceChildren(from: child.value)
+                for certItem in certs {
+                    if let cert = X509Certificate(der: certItem.rawDER) {
+                        certificates.append(cert)
                     }
-                    X509_free(cert)
+                }
+            } else if child.tag == 0x31 { // SET of SignerInfo
+                signerInfosData = child.value
+            }
+        }
+
+        guard let siData = signerInfosData else {
+            return (false, nil, "Missing SignerInfo in CMS structure")
+        }
+
+        let signerInfoList = ASN1Helper.parseSequenceChildren(from: siData)
+        guard let firstSignerInfo = signerInfoList.first else {
+            return (false, nil, "Empty SignerInfo list")
+        }
+
+        // SignerInfo: SEQUENCE { version, sid, digestAlg, signedAttrs [0] IMPLICIT, sigAlg, signature }
+        let siChildren = ASN1Helper.parseSequenceChildren(from: firstSignerInfo.value)
+        guard siChildren.count >= 6 else {
+            return (false, nil, "Invalid SignerInfo structure")
+        }
+
+        let sidDER = siChildren[1].rawDER
+        var signedAttrsRawContent: Data? = nil
+        var signatureBytes: Data? = nil
+
+        for child in siChildren {
+            if (child.tag & 0xC0) == 0x80 && (child.tag & 0x1F) == 0 { // [0] IMPLICIT signedAttrs
+                signedAttrsRawContent = child.value
+            } else if child.tag == 0x04 { // OCTET STRING signature
+                signatureBytes = child.value
+            }
+        }
+
+        guard let signedAttrsContent = signedAttrsRawContent,
+              let sigBytes = signatureBytes else {
+            return (false, nil, "Missing signed attributes or signature bytes")
+        }
+
+        // Find signer certificate matching sid
+        // sid: IssuerAndSerialNumber: SEQUENCE { issuer Name, serialNumber CertificateSerialNumber }
+        let sidChildren = ASN1Helper.parseSequenceChildren(from: siChildren[1].value)
+        let sidSerialDER = (sidChildren.count >= 2) ? sidChildren[1].rawDER : nil
+        let sidIssuerDER = (sidChildren.count >= 2) ? sidChildren[0].rawDER : nil
+
+        let signerCert: X509Certificate?
+        if let sidSerial = sidSerialDER,
+           let match = certificates.first(where: { $0.serialNumberDER == sidSerial && (sidIssuerDER == nil || $0.issuerDER == sidIssuerDER) }) {
+            signerCert = match
+        } else {
+            signerCert = certificates.first
+        }
+
+        guard let cert = signerCert else {
+            return (false, nil, "Signer certificate not found in CMS signature")
+        }
+
+        // Verify messageDigest attribute matches SHA-256(codeDirectoryBlob)
+        let expectedCDDigest = Data(SHA256.hash(data: codeDirectoryBlob))
+        let signedAttrs = ASN1Helper.parseSequenceChildren(from: signedAttrsContent)
+        var messageDigestFound: Data? = nil
+
+        for attr in signedAttrs {
+            let attrChildren = ASN1Helper.parseSequenceChildren(from: attr.value)
+            if attrChildren.count >= 2 {
+                let attrOID = attrChildren[0].rawDER
+                if attrOID == ASN1Helper.oidMessageDigest {
+                    let setChildren = ASN1Helper.parseSequenceChildren(from: attrChildren[1].value)
+                    if let digestOctet = setChildren.first {
+                        messageDigestFound = digestOctet.value
+                    }
                 }
             }
-            OPENSSL_sk_free(certStack)
         }
 
-        // Verify CMS detached signature against CodeDirectory data
-        let dataBio = BIO_new(BIO_s_mem())
-        defer { BIO_free(dataBio) }
-        _ = codeDirectoryBlob.withUnsafeBytes { raw in
-            BIO_write(dataBio, raw.baseAddress, Int32(raw.count))
+        guard let actualDigest = messageDigestFound, actualDigest == expectedCDDigest else {
+            return (false, cert.subjectSummary, "CodeDirectory digest does not match CMS messageDigest attribute")
         }
 
-        let flags: UInt32 = UInt32(CMS_NO_SIGNER_CERT_VERIFY | CMS_DETACHED | CMS_BINARY)
-        let verifyResult = CMS_verify(cms, nil, nil, dataBio, nil, flags)
+        // Verify RSA signature over signedAttrs (encoded as DER SET tag 0x31)
+        let signedAttrsSetDER = ASN1Helper.set(signedAttrsContent)
+        let digestToVerify = SHA256.hash(data: signedAttrsSetDER)
 
-        if verifyResult == 1 {
-            return (true, subjectName, nil)
-        } else {
-            return (false, subjectName, "Cryptographic CMS signature verification failed")
+        do {
+            let rsaPublicKey = try _RSA.Signing.PublicKey(derRepresentation: cert.subjectPublicKeyInfoDER)
+            let rsaSignature = _RSA.Signing.RSASignature(rawRepresentation: sigBytes)
+            guard rsaPublicKey.isValidSignature(rsaSignature, for: digestToVerify, padding: .insecurePKCS1v1_5) else {
+                return (false, cert.subjectSummary, "Cryptographic CMS signature verification failed")
+            }
+            return (true, cert.subjectSummary, nil)
+        } catch {
+            return (false, cert.subjectSummary, "RSA signature verification error: \(error.localizedDescription)")
         }
     }
-
 }
 
 fileprivate extension Data {

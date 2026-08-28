@@ -8,7 +8,7 @@
 
 
 import Foundation
-import CryptoKit
+import Crypto
 
 public final class CodeDirectoryBuilder {
 

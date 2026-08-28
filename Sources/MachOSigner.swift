@@ -334,7 +334,7 @@ public final class MachOSigner {
             }
         }
 
-        // --- Pass 2: Hash the updated finalBinary (with exact Page 0 load commands!) ---
+        //Pass 2: Hash the updated finalBinary (with exact Page 0 load commands!)
         let realCD = CodeDirectoryBuilder(
             binaryData: finalBinary,
             codeLimit: codeLimit,
