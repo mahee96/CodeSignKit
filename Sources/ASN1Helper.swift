@@ -185,15 +185,37 @@ public struct ASN1Helper {
         }
         return items
     }
+    public static func bitString(_ content: Data) -> Data {
+        return encodeTLV(tag: 0x03, value: Data([0x00]) + content)
+    }
+
+    public static func parseTime(_ tag: UInt8, value: Data) -> Date? {
+        guard let str = String(data: value, encoding: .ascii) else { return nil }
+        let formatter = DateFormatter()
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        if tag == 0x17 { // UTCTime
+            formatter.dateFormat = "yyMMddHHmmss'Z'"
+            return formatter.date(from: str)
+        } else if tag == 0x18 { // GeneralizedTime
+            formatter.dateFormat = "yyyyMMddHHmmss'Z'"
+            return formatter.date(from: str)
+        }
+        return nil
+    }
 }
 
 // X.509 Certificate Helper
 public struct X509Certificate: Sendable {
     public let rawDER: Data
     public let serialNumberDER: Data
+    public let serialNumberHex: String
     public let issuerDER: Data
     public let subjectDER: Data
     public let subjectSummary: String
+    public let commonName: String?
+    public let notBefore: Date?
+    public let notAfter: Date?
     public let subjectPublicKeyInfoDER: Data
     public let sha1Fingerprint: Data
 
@@ -217,6 +239,11 @@ public struct X509Certificate: Sendable {
 
         guard idx < tbsChildren.count else { return nil }
         self.serialNumberDER = tbsChildren[idx].rawDER
+        var sBytes = [UInt8](tbsChildren[idx].value)
+        while sBytes.count > 1 && sBytes[0] == 0 {
+            sBytes.removeFirst()
+        }
+        self.serialNumberHex = sBytes.map { String(format: "%02X", $0) }.joined()
         idx += 1 // skip serialNumber
 
         guard idx < tbsChildren.count else { return nil }
@@ -227,11 +254,23 @@ public struct X509Certificate: Sendable {
         idx += 1 // skip issuer
 
         guard idx < tbsChildren.count else { return nil }
+        var nbDate: Date? = nil
+        var naDate: Date? = nil
+        if tbsChildren[idx].tag == 0x30 {
+            let times = ASN1Helper.parseSequenceChildren(from: tbsChildren[idx].value)
+            if times.count >= 2 {
+                nbDate = ASN1Helper.parseTime(times[0].tag, value: times[0].value)
+                naDate = ASN1Helper.parseTime(times[1].tag, value: times[1].value)
+            }
+        }
+        self.notBefore = nbDate
+        self.notAfter = naDate
         idx += 1 // skip validity
 
         guard idx < tbsChildren.count else { return nil }
         self.subjectDER = tbsChildren[idx].rawDER
         self.subjectSummary = Self.extractSubjectSummary(from: tbsChildren[idx].value)
+        self.commonName = Self.extractCommonName(from: tbsChildren[idx].value)
         idx += 1 // skip subject
 
         guard idx < tbsChildren.count else { return nil }
@@ -249,5 +288,18 @@ public struct X509Certificate: Sendable {
                 return String(data: val, encoding: .utf8) ?? String(data: val, encoding: .ascii)
             }
         return parts.joined(separator: ", ")
+    }
+
+    private static func extractCommonName(from subjectContent: Data) -> String? {
+        let cnOID = ASN1Helper.encodeOID("2.5.4.3")
+        for rdn in ASN1Helper.parseSequenceChildren(from: subjectContent) {
+            for atv in ASN1Helper.parseSequenceChildren(from: rdn.value) {
+                let items = ASN1Helper.parseSequenceChildren(from: atv.value)
+                if items.count >= 2 && items[0].rawDER == cnOID {
+                    return String(data: items[1].value, encoding: .utf8) ?? String(data: items[1].value, encoding: .ascii)
+                }
+            }
+        }
+        return nil
     }
 }
