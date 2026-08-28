@@ -260,13 +260,35 @@ struct MachOSignerTests {
         let (p12Data, _, _) = try TestFixtures.createSelfSignedP12(password: "test")
         let cms = CMSSigner(p12Data: p12Data, password: "test")
 
+        let dummyPlist = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+        <plist version="1.0">
+        <dict>
+            <key>CFBundleIdentifier</key>
+            <string>com.example.realapp</string>
+            <key>CFBundleExecutable</key>
+            <string>real_signed_bin</string>
+        </dict>
+        </plist>
+        """.data(using: .utf8)!
+        let tempAppDir = TestFixtures.tempDir.appendingPathComponent("RealAppTest_\(UUID().uuidString).app")
+        let codeSigDir = tempAppDir.appendingPathComponent("_CodeSignature")
+        try FileManager.default.createDirectory(at: codeSigDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempAppDir) }
+
+        try dummyPlist.write(to: tempAppDir.appendingPathComponent("Info.plist"))
+        let codeResBuilder = CodeResourcesBuilder(bundleURL: tempAppDir, executableName: "real_signed_bin")
+        let codeResData = try codeResBuilder.build()
+        try codeResData.write(to: codeSigDir.appendingPathComponent("CodeResources"))
+
         let signer = MachOSigner(
             binaryData: realBinary,
             bundleIdentifier: "com.example.realapp",
             teamIdentifier: "TEAM123456",
             entitlementsXML: "<plist><dict><key>get-task-allow</key><true/></dict></plist>",
-            infoPlistData: nil,
-            codeResourcesData: nil,
+            infoPlistData: dummyPlist,
+            codeResourcesData: codeResData,
             cmsSigner: cms,
             isMainExecutable: true
         )
@@ -280,13 +302,12 @@ struct MachOSignerTests {
         #expect(parser.teamID() == "TEAM123456")
         #expect(!parser.getCDHashes().isEmpty)
 
-        // Write to disk and verify with Apple's official codesign tool
-        let tempBinPath = TestFixtures.tempDir.appendingPathComponent("real_signed_bin").path
+        // Write signed binary into bundle and verify with Apple's official codesign tool
+        let tempBinPath = tempAppDir.appendingPathComponent("real_signed_bin").path
         try signedData.write(to: URL(fileURLWithPath: tempBinPath))
-        defer { try? FileManager.default.removeItem(atPath: tempBinPath) }
 
-        let (appleOk, _) = TestFixtures.verifyWithAppleCodeSign(binaryPath: tempBinPath)
-        #expect(appleOk, "Apple codesign tool should accept real signed binary")
+        let (appleOk, appleOutput) = TestFixtures.verifyWithAppleCodeSign(binaryPath: tempAppDir.path)
+        #expect(appleOk, "Apple codesign tool should accept real signed bundle: \(appleOutput)")
 
         // Test stripping real signed binary
         let strippedData = try MachOSigner.removeSignature(binaryData: signedData)

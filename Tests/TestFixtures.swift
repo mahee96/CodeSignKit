@@ -90,6 +90,49 @@ enum TestFixtures {
         #endif
     }
 
+    static func compileRealDylib(fat: Bool = false) throws -> Data {
+        #if os(macOS)
+        guard let clangPath = findExecutable("clang") else {
+            throw NSError(domain: "TestFixtures", code: 2, userInfo: [NSLocalizedDescriptionKey: "clang not found on system"])
+        }
+
+        let srcFile = tempDir.appendingPathComponent("dylib_\(UUID().uuidString).c")
+        let dylibFile = tempDir.appendingPathComponent("dylib_\(UUID().uuidString).dylib")
+        let cSource = """
+        #include <stdio.h>
+        void helper_function() {
+            printf("Dynamic library function\\n");
+        }
+        """
+        try cSource.write(to: srcFile, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: srcFile) }
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: clangPath)
+        if fat {
+            process.arguments = ["-dynamiclib", "-arch", "arm64", "-arch", "x86_64", "-o", dylibFile.path, srcFile.path]
+        } else {
+            #if arch(arm64)
+            process.arguments = ["-dynamiclib", "-arch", "arm64", "-o", dylibFile.path, srcFile.path]
+            #else
+            process.arguments = ["-dynamiclib", "-arch", "x86_64", "-o", dylibFile.path, srcFile.path]
+            #endif
+        }
+        try process.run()
+        process.waitUntilExit()
+
+        guard process.terminationStatus == 0, FileManager.default.fileExists(atPath: dylibFile.path) else {
+            throw NSError(domain: "TestFixtures", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to compile test dylib"])
+        }
+
+        let data = try Data(contentsOf: dylibFile)
+        try? FileManager.default.removeItem(at: dylibFile)
+        return data
+        #else
+        throw NSError(domain: "TestFixtures", code: 2, userInfo: [NSLocalizedDescriptionKey: "Real Mach-O compilation via clang is only supported on macOS"])
+        #endif
+    }
+
     static func createSelfSignedP12(password: String = "test") throws -> (p12Data: Data, certPEM: Data, keyPEM: Data) {
         guard let opensslPath = findExecutable("openssl") else {
             throw NSError(domain: "TestFixtures", code: 3, userInfo: [NSLocalizedDescriptionKey: "openssl CLI not found on system"])

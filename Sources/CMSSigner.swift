@@ -183,8 +183,12 @@ public final class CMSSigner {
 
         // 6. Build Certificates Set [0] IMPLICIT
         var allCertsContent = leafCert.rawDER
-        for ca in parser.intermediateCertificates {
-            allCertsContent.append(ca.rawDER)
+        if !parser.intermediateCertificates.isEmpty {
+            for ca in parser.intermediateCertificates {
+                allCertsContent.append(ca.rawDER)
+            }
+        } else if let wwdrDER = ASN1Helper.decodePEM(CMSSigner.AppleWWDRCertPEM) {
+            allCertsContent.append(wwdrDER)
         }
         let certificatesContextual = ASN1Helper.contextual(0, content: allCertsContent, constructed: true)
 

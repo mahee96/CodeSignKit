@@ -36,7 +36,7 @@ public final class MachOParser {
     private static let MH_MAGIC_64: UInt32 = 0xfeedfacf     // 64-bit Mach-O magic (Big-Endian)
     private static let MH_CIGAM_64: UInt32 = 0xcffaedfe     // 64-bit Mach-O magic (Little-Endian)
 
-    private static let LC_CODE_SIGNATURE: UInt32 = 0x1d     // Load command type for code signatures
+    private static let LC_CODE_SIGNATURE: UInt32 = 0x1d      // Load command type for code signatures
     private static let LC_LOAD_DYLIB: UInt32 = 0x0c          // Load command type for load dylib
     private static let LC_ENCRYPTION_INFO: UInt32 = 0x21     // Load command type for encryption info
     private static let LC_ENCRYPTION_INFO_64: UInt32 = 0x2c  // Load command type for encryption info (64-bit)
@@ -47,11 +47,27 @@ public final class MachOParser {
     private static let LC_VERSION_MIN_MACOSX: UInt32 = 0x24   // Load command type for min macOS version
     private static let LC_VERSION_MIN_TVOS: UInt32 = 0x2f     // Load command type for min tvOS version
     private static let LC_VERSION_MIN_WATCHOS: UInt32 = 0x30  // Load command type for min watchOS version
-    private static let LC_BUILD_VERSION: UInt32 = 0x32       // Load command type for build version (iOS 12+)
+    private static let LC_BUILD_VERSION: UInt32 = 0x32        // Load command type for build version (iOS 12+)
 
     private static let SUPERBLOB_MAGIC: UInt32 = 0xfade0cc0  // SuperBlob signature magic
     private static let BLOB_MAGIC_REQ: UInt32 = 0xfade7171   // Requirements blob magic
     private static let BLOB_MAGIC_ENT: UInt32 = 0xfade7172   // Entitlements blob magic
+
+    public static func isMachOBinary(at url: URL) -> Bool {
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return false }
+        defer { try? handle.close() }
+        let header = handle.readData(ofLength: 4)
+        guard header.count == 4 else { return false }
+        let magic = header.withUnsafeBytes { $0.loadUnaligned(as: UInt32.self) }
+        return magic == MH_MAGIC_64 ||
+               magic == MH_CIGAM_64 ||
+               magic == MH_MAGIC ||
+               magic == MH_CIGAM ||
+               magic == FAT_MAGIC ||
+               magic == FAT_CIGAM ||
+               magic == FAT_MAGIC_64 ||
+               magic == FAT_CIGAM_64
+    }
 
     public static func findExecutable(at url: URL) -> URL? {
         var isDir: ObjCBool = false

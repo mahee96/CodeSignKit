@@ -203,6 +203,12 @@ public struct ASN1Helper {
         }
         return nil
     }
+
+    public static func decodePEM(_ pem: String) -> Data? {
+        let lines = pem.components(separatedBy: .newlines)
+        let base64 = lines.filter { !$0.hasPrefix("-----") }.joined()
+        return Data(base64Encoded: base64, options: .ignoreUnknownCharacters)
+    }
 }
 
 // X.509 Certificate Helper

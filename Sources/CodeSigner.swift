@@ -219,33 +219,78 @@ public final class CodeSigner {
     private static func collectEmbeddedItems(in appURL: URL) -> EmbeddedItems {
         var items = EmbeddedItems()
         let fileManager = FileManager.default
+        var seenPaths = Set<String>()
 
-        // Frameworks
+        // 1. Frameworks directory
         let frameworksURL = appURL.appendingPathComponent("Frameworks")
         if let contents = try? fileManager.contentsOfDirectory(at: frameworksURL, includingPropertiesForKeys: nil) {
             for item in contents {
-                if item.pathExtension == "framework" || item.pathExtension == "dylib" {
-                    items.frameworksAndDylibs.append(item)
+                let ext = item.pathExtension.lowercased()
+                if ext == "framework" || ext == "dylib" {
+                    if seenPaths.insert(item.standardizedFileURL.path).inserted {
+                        items.frameworksAndDylibs.append(item)
+                    }
                 }
             }
         }
 
-        // PlugIns (App Extensions)
-        let pluginsURL = appURL.appendingPathComponent("PlugIns")
-        if let contents = try? fileManager.contentsOfDirectory(at: pluginsURL, includingPropertiesForKeys: nil) {
-            for item in contents {
-                if item.pathExtension == "appex" {
-                    items.appExtensions.append(item)
+        // 2. Known extension and sub-app directories
+        let extensionDirs = ["PlugIns", "Extensions", "XPCServices", "Watch", "AppClips"]
+        for dirName in extensionDirs {
+            let dirURL = appURL.appendingPathComponent(dirName)
+            if let contents = try? fileManager.contentsOfDirectory(at: dirURL, includingPropertiesForKeys: nil) {
+                for item in contents {
+                    let ext = item.pathExtension.lowercased()
+                    if ext == "appex" || ext == "xctest" || ext == "octest" || ext == "app" || ext == "xpc" {
+                        if seenPaths.insert(item.standardizedFileURL.path).inserted {
+                            items.appExtensions.append(item)
+                        }
+                    } else if ext == "framework" || ext == "dylib" {
+                        if seenPaths.insert(item.standardizedFileURL.path).inserted {
+                            items.frameworksAndDylibs.append(item)
+                        }
+                    }
                 }
             }
         }
 
-        // Extensions
-        let extensionsURL = appURL.appendingPathComponent("Extensions")
-        if let contents = try? fileManager.contentsOfDirectory(at: extensionsURL, includingPropertiesForKeys: nil) {
-            for item in contents {
-                if item.pathExtension == "appex" {
-                    items.appExtensions.append(item)
+        // 3. Deep scan entire bundle for loose Mach-O binaries, dylibs, nested bundles, or plugins
+        if let enumerator = fileManager.enumerator(at: appURL, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsPackageDescendants]) {
+            let mainExecPath = MachOParser.findExecutable(at: appURL)?.standardizedFileURL.path
+            for case let fileURL as URL in enumerator {
+                let ext = fileURL.pathExtension.lowercased()
+                var isDir: ObjCBool = false
+                guard fileManager.fileExists(atPath: fileURL.path, isDirectory: &isDir) else { continue }
+
+                if isDir.boolValue {
+                    if ext == "appex" || ext == "xctest" || ext == "octest" || ext == "app" || ext == "xpc" || ext == "systemextension" || ext == "plugin" {
+                        if seenPaths.insert(fileURL.standardizedFileURL.path).inserted {
+                            items.appExtensions.append(fileURL)
+                        }
+                        enumerator.skipDescendants()
+                    } else if ext == "framework" || ext == "kext" {
+                        if seenPaths.insert(fileURL.standardizedFileURL.path).inserted {
+                            items.frameworksAndDylibs.append(fileURL)
+                        }
+                        enumerator.skipDescendants()
+                    } else if ext == "bundle" {
+                        if MachOParser.findExecutable(at: fileURL) != nil {
+                            if seenPaths.insert(fileURL.standardizedFileURL.path).inserted {
+                                items.frameworksAndDylibs.append(fileURL)
+                            }
+                        }
+                        enumerator.skipDescendants()
+                    }
+                } else {
+                    // Regular file: if it is a .dylib or any Mach-O binary (and not the main executable)
+                    let filePath = fileURL.standardizedFileURL.path
+                    if filePath != mainExecPath {
+                        if ext == "dylib" || ext == "so" || MachOParser.isMachOBinary(at: fileURL) {
+                            if seenPaths.insert(filePath).inserted {
+                                items.frameworksAndDylibs.append(fileURL)
+                            }
+                        }
+                    }
                 }
             }
         }
