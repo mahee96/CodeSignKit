@@ -220,6 +220,7 @@ public struct X509Certificate: Sendable {
     public let subjectDER: Data
     public let subjectSummary: String
     public let commonName: String?
+    public let organizationalUnit: String?
     public let notBefore: Date?
     public let notAfter: Date?
     public let subjectPublicKeyInfoDER: Data
@@ -277,6 +278,7 @@ public struct X509Certificate: Sendable {
         self.subjectDER = tbsChildren[idx].rawDER
         self.subjectSummary = Self.extractSubjectSummary(from: tbsChildren[idx].value)
         self.commonName = Self.extractCommonName(from: tbsChildren[idx].value)
+        self.organizationalUnit = Self.extractOU(from: tbsChildren[idx].value)
         idx += 1 // skip subject
 
         guard idx < tbsChildren.count else { return nil }
@@ -302,6 +304,19 @@ public struct X509Certificate: Sendable {
             for atv in ASN1Helper.parseSequenceChildren(from: rdn.value) {
                 let items = ASN1Helper.parseSequenceChildren(from: atv.value)
                 if items.count >= 2 && items[0].rawDER == cnOID {
+                    return String(data: items[1].value, encoding: .utf8) ?? String(data: items[1].value, encoding: .ascii)
+                }
+            }
+        }
+        return nil
+    }
+
+    private static func extractOU(from subjectContent: Data) -> String? {
+        let ouOID = ASN1Helper.encodeOID("2.5.4.11")
+        for rdn in ASN1Helper.parseSequenceChildren(from: subjectContent) {
+            for atv in ASN1Helper.parseSequenceChildren(from: rdn.value) {
+                let items = ASN1Helper.parseSequenceChildren(from: atv.value)
+                if items.count >= 2 && items[0].rawDER == ouOID {
                     return String(data: items[1].value, encoding: .utf8) ?? String(data: items[1].value, encoding: .ascii)
                 }
             }

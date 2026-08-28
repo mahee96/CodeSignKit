@@ -86,11 +86,15 @@ public final class CMSSigner {
         self.password = password
     }
 
-    public func getLeafCertificateSHA1() -> Data? {
+    public var leafCertificate: X509Certificate? {
         guard let parser = try? PKCS12Parser(p12Data: p12Data, password: password) else {
             return nil
         }
-        return parser.leafCertificate?.sha1Fingerprint
+        return parser.leafCertificate
+    }
+
+    public func getLeafCertificateSHA1() -> Data? {
+        return leafCertificate?.sha1Fingerprint
     }
 
     public func sign(codeDirectoryData: Data) throws -> Data {
@@ -187,8 +191,13 @@ public final class CMSSigner {
             for ca in parser.intermediateCertificates {
                 allCertsContent.append(ca.rawDER)
             }
-        } else if let wwdrDER = ASN1Helper.decodePEM(CMSSigner.AppleWWDRCertPEM) {
-            allCertsContent.append(wwdrDER)
+        } else {
+            if let wwdrDER = ASN1Helper.decodePEM(CMSSigner.AppleWWDRCertPEM) {
+                allCertsContent.append(wwdrDER)
+            }
+            if let rootDER = ASN1Helper.decodePEM(CMSSigner.AppleRootCertPEM) {
+                allCertsContent.append(rootDER)
+            }
         }
         let certificatesContextual = ASN1Helper.contextual(0, content: allCertsContent, constructed: true)
 
