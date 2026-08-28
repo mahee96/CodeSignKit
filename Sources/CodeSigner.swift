@@ -77,59 +77,58 @@ public final class CodeSigner {
             if fileManager.fileExists(atPath: codeSigDir.path) {
                 try? fileManager.removeItem(at: codeSigDir)
             }
+        }
 
-            // 2. Strip signature from main executable
-            if let execURL = MachOParser.findExecutable(at: url) {
-                let execData = try Data(contentsOf: execURL)
-                let unsignedData = try MachOSigner.removeSignature(binaryData: execData)
-                try unsignedData.write(to: execURL, options: .atomic)
-            }
+        // 2. Strip signature from executable binary if present
+        if let target = resolveTarget(at: url) {
+            let execData = try Data(contentsOf: target.executableURL)
+            let unsignedData = try MachOSigner.removeSignature(binaryData: execData)
+            try unsignedData.write(to: target.executableURL, options: .atomic)
+        }
 
-            // 3. Deep remove from embedded items if requested
-            if deep {
-                let embedded = collectEmbeddedItems(in: url)
-                for fwURL in embedded.frameworksAndDylibs {
-                    try removeSignature(at: fwURL, deep: true)
-                }
-                for appexURL in embedded.appExtensions {
-                    try removeSignature(at: appexURL, deep: true)
-                }
+        // 3. Deep remove from embedded items if requested
+        if deep && isDir.boolValue {
+            let embedded = collectEmbeddedItems(in: url)
+            for fwURL in embedded.frameworksAndDylibs {
+                try removeSignature(at: fwURL, deep: true)
             }
+            for appexURL in embedded.appExtensions {
+                try removeSignature(at: appexURL, deep: true)
+            }
+        }
+    }
+
+    private static func resolveTarget(at url: URL) -> (bundleURL: URL?, executableURL: URL)? {
+        let fileManager = FileManager.default
+        var isDir: ObjCBool = false
+        guard fileManager.fileExists(atPath: url.path, isDirectory: &isDir) else { return nil }
+
+        if isDir.boolValue {
+            guard let exec = MachOParser.findExecutable(at: url), MachOParser.isMachOBinary(at: exec) else {
+                return nil
+            }
+            return (bundleURL: url, executableURL: exec)
         } else {
-            let data = try Data(contentsOf: url)
-            let unsignedData = try MachOSigner.removeSignature(binaryData: data)
-            try unsignedData.write(to: url, options: .atomic)
+            guard MachOParser.isMachOBinary(at: url) else { return nil }
+            return (bundleURL: nil, executableURL: url)
         }
     }
 
     private static func signItem(
-
         at url: URL,
         relativeTo rootURL: URL,
         customTeamID: String? = nil,
         cmsSigner: CMSSigner,
         entitlementProvider: (String) -> String
     ) throws {
-        let fileManager = FileManager.default
-        var isDir: ObjCBool = false
-        guard fileManager.fileExists(atPath: url.path, isDirectory: &isDir) else {
+        guard let target = resolveTarget(at: url) else {
+            // Pure resource bundle or non-binary file; contents are sealed into CodeResources
             return
         }
 
-        let isBundle = isDir.boolValue
-        let executableURL: URL
-        let bundleURL: URL?
-
-        if isBundle {
-            bundleURL = url
-            guard let exec = MachOParser.findExecutable(at: url) else {
-                throw CodeSignerError.invalidMachO("Could not find executable for bundle at \(url.path)")
-            }
-            executableURL = exec
-        } else {
-            bundleURL = nil
-            executableURL = url
-        }
+        let fileManager = FileManager.default
+        let bundleURL = target.bundleURL
+        let executableURL = target.executableURL
 
         // Compute relative path from root
         let rootPath = rootURL.path.hasSuffix("/") ? rootURL.path : rootURL.path + "/"
@@ -146,7 +145,7 @@ public final class CodeSigner {
         var infoPlistData: Data? = nil
         var codeResourcesData: Data? = nil
         var bundleID = executableURL.lastPathComponent
-        var teamID: String? = customTeamID
+        var teamID: String? = (customTeamID?.isEmpty == false) ? customTeamID : cmsSigner.leafCertificate?.organizationalUnit
 
         if let bundleURL = bundleURL {
             let infoPlistURL = bundleURL.appendingPathComponent("Info.plist")
@@ -178,8 +177,8 @@ public final class CodeSigner {
         let rawEntitlements = entitlementProvider(relPath)
         let entitlementsXML: String? = rawEntitlements.isEmpty ? nil : rawEntitlements
 
-        // Extract Team ID from existing binary or entitlements if present
-        if teamID == nil, let parser = try? MachOParser(url: executableURL) {
+        // Extract Team ID from existing binary if still nil
+        if (teamID == nil || teamID?.isEmpty == true), let parser = try? MachOParser(url: executableURL) {
             teamID = parser.teamID()
         }
 
@@ -274,7 +273,7 @@ public final class CodeSigner {
                         }
                         enumerator.skipDescendants()
                     } else if ext == "bundle" {
-                        if MachOParser.findExecutable(at: fileURL) != nil {
+                        if resolveTarget(at: fileURL) != nil {
                             if seenPaths.insert(fileURL.standardizedFileURL.path).inserted {
                                 items.frameworksAndDylibs.append(fileURL)
                             }
