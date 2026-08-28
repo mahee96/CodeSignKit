@@ -10,12 +10,9 @@ import Foundation
 import Crypto
 
 public struct RequirementsBuilder {
-    private static let opAnd: UInt32 = 6
     private static let opIdent: UInt32 = 2
-    private static let opCertField: UInt32 = 4
-    private static let matchEqual: UInt32 = 0
-    private static let certLeaf: UInt32 = 0xFFFFFFFF // -1 = leaf certificate
-
+    private static let opAppleGenericAnchor: UInt32 = 15
+    private static let opAnd: UInt32 = 6
 
     public static func buildDesignatedRequirement(bundleIdentifier: String, certSHA1: Data? = nil) -> Data {
         var exprData = Data()
@@ -27,24 +24,12 @@ public struct RequirementsBuilder {
             identBytes.append(Data(repeating: 0, count: pad))
         }
 
-        if let certSHA1, certSHA1.count == 20 {
-            // opAnd
-            exprData.writeUInt32BigEndian(opAnd)
-            // opIdent <len> <identBytes>
-            exprData.writeUInt32BigEndian(opIdent)
-            exprData.writeUInt32BigEndian(identLen)
-            exprData.append(identBytes)
-            // opCertField <certSlot: -1> <matchEqual> <20-byte SHA-1>
-            exprData.writeUInt32BigEndian(opCertField)
-            exprData.writeUInt32BigEndian(certLeaf)
-            exprData.writeUInt32BigEndian(UInt32(certSHA1.count))
-            exprData.append(certSHA1)
-        } else {
-            // opIdent <len> <identBytes>
-            exprData.writeUInt32BigEndian(opIdent)
-            exprData.writeUInt32BigEndian(identLen)
-            exprData.append(identBytes)
-        }
+        // designated => identifier "<bundleID>" and anchor apple generic
+        exprData.writeUInt32BigEndian(opAnd)
+        exprData.writeUInt32BigEndian(opIdent)
+        exprData.writeUInt32BigEndian(identLen)
+        exprData.append(identBytes)
+        exprData.writeUInt32BigEndian(opAppleGenericAnchor)
 
         // Single requirement expr blob: header (12 bytes) + exprData
         let exprBlobSize = 12 + exprData.count
