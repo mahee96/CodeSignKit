@@ -11,8 +11,6 @@ import Crypto
 
 public struct RequirementsBuilder {
     private static let opIdent: UInt32 = 2
-    private static let opAppleGenericAnchor: UInt32 = 15
-    private static let opAnd: UInt32 = 6
 
     public static func buildDesignatedRequirement(bundleIdentifier: String, certSHA1: Data? = nil) -> Data {
         var exprData = Data()
@@ -24,12 +22,10 @@ public struct RequirementsBuilder {
             identBytes.append(Data(repeating: 0, count: pad))
         }
 
-        // designated => identifier "<bundleID>" and anchor apple generic
-        exprData.writeUInt32BigEndian(opAnd)
+        // designated => identifier "<bundleID>"
         exprData.writeUInt32BigEndian(opIdent)
         exprData.writeUInt32BigEndian(identLen)
         exprData.append(identBytes)
-        exprData.writeUInt32BigEndian(opAppleGenericAnchor)
 
         // Single requirement expr blob: header (12 bytes) + exprData
         let exprBlobSize = 12 + exprData.count
