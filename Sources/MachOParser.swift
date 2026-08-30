@@ -319,6 +319,10 @@ public final class MachOParser {
         return ASN1Decoder.findCertificates(in: payload)
     }
 
+    public func x509Certificates() -> [X509Certificate] {
+        certificates().compactMap { X509Certificate(der: $0) }
+    }
+
     public func getCDHashes() -> [String] {
         guard let cdBlob = try? extractRawBlob(slotType: 0) else { return [] }
         guard cdBlob.count >= 40 else { return [] }
