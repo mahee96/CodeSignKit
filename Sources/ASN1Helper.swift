@@ -212,7 +212,9 @@ public struct ASN1Helper {
 }
 
 // X.509 Certificate Helper
-public struct X509Certificate: Sendable {
+public struct X509Certificate: Sendable, Codable, Equatable, Hashable, Identifiable {
+    public var id: String { serialNumberHex }
+
     public let rawDER: Data
     public let serialNumberDER: Data
     public let serialNumberHex: String
