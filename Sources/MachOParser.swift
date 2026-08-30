@@ -70,45 +70,65 @@ public final class MachOParser {
     }
 
     public static func findExecutable(at url: URL) -> URL? {
-        var isDir: ObjCBool = false
-        guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir) else {
+        guard FileManager.default.fileExists(atPath: url.path) else {
             return nil
         }
         
-        guard isDir.boolValue else {
+        let isDirectory = (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true
+        guard isDirectory else {
             return url
         }
         
         let bundle = Bundle(url: url)
-        guard let executableName = bundle?.executableURL?.lastPathComponent ?? bundle?.infoDictionary?["CFBundleExecutable"] as? String else {
+        var executableName: String? = bundle?.executableURL?.lastPathComponent ?? bundle?.infoDictionary?["CFBundleExecutable"] as? String
+        
+        if executableName == nil {
+            let plistURL = url.appendingPathComponent("Info.plist")
+            if let dict = NSDictionary(contentsOf: plistURL) as? [String: Any] {
+                executableName = dict["CFBundleExecutable"] as? String
+            } else if let plistData = try? Data(contentsOf: plistURL),
+                      let plist = try? PropertyListSerialization.propertyList(from: plistData, options: [], format: nil) as? [String: Any] {
+                executableName = plist["CFBundleExecutable"] as? String
+            }
+        }
+        
+        if executableName == nil {
             // Check Contents/Info.plist (macOS App Bundle structure)
             let contentsPlistURL = url.appendingPathComponent("Contents/Info.plist")
-            if let contentsData = try? Data(contentsOf: contentsPlistURL),
-               let contentsPlist = try? PropertyListSerialization.propertyList(from: contentsData, options: [], format: nil) as? [String: Any],
-               let contentsExecName = contentsPlist["CFBundleExecutable"] as? String {
-                let path = url.appendingPathComponent("Contents/MacOS/\(contentsExecName)")
-                if FileManager.default.fileExists(atPath: path.path) {
-                    return path
+            if let dict = NSDictionary(contentsOf: contentsPlistURL) as? [String: Any] {
+                executableName = dict["CFBundleExecutable"] as? String
+            } else if let contentsData = try? Data(contentsOf: contentsPlistURL),
+                      let contentsPlist = try? PropertyListSerialization.propertyList(from: contentsData, options: [], format: nil) as? [String: Any] {
+                executableName = contentsPlist["CFBundleExecutable"] as? String
+            }
+        }
+
+        // If executableName is identified from Info.plist, check known candidate paths
+        if let executableName = executableName {
+            let candidates = [
+                url.appendingPathComponent(executableName),
+                url.appendingPathComponent("Contents/MacOS/\(executableName)"),
+                url.appendingPathComponent("Resources/\(executableName)"),
+                url.appendingPathComponent("Versions/Current/\(executableName)"),
+                url.appendingPathComponent("Versions/A/\(executableName)")
+            ]
+            for candidate in candidates {
+                if FileManager.default.fileExists(atPath: candidate.path) {
+                    return candidate
                 }
             }
-            return nil
         }
-        
-        let path = url.appendingPathComponent(executableName)
-        if FileManager.default.fileExists(atPath: path.path) {
-            return path
+
+        // Direct Mach-O fallback: scan immediate children of the bundle directory
+        if let contents = try? FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: [.isDirectoryKey]) {
+            for item in contents {
+                let isItemDir = (try? item.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true
+                if !isItemDir && isMachOBinary(at: item) {
+                    return item
+                }
+            }
         }
-        
-        let macPath = url.appendingPathComponent("Contents/MacOS/\(executableName)")
-        if FileManager.default.fileExists(atPath: macPath.path) {
-            return macPath
-        }
-        
-        let macResourcesPath = url.appendingPathComponent("Resources/\(executableName)")
-        if FileManager.default.fileExists(atPath: macResourcesPath.path) {
-            return macResourcesPath
-        }
-        
+
         return nil
     }
 
@@ -116,8 +136,8 @@ public final class MachOParser {
      Initializes the parser with a local binary file URL or app bundle URL.
      */
     public init(url: URL) throws {
-        var isDir: ObjCBool = false
-        if FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir), isDir.boolValue {
+        let isDirectory = (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true
+        if isDirectory {
             guard let execURL = Self.findExecutable(at: url) else {
                 throw MachOParserError.invalidMachO
             }
