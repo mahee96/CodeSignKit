@@ -228,9 +228,12 @@ public struct X509Certificate: Sendable, Codable, Equatable, Hashable, Identifia
     public let subjectPublicKeyInfoDER: Data
     public let sha1Fingerprint: Data
 
-    public init?(der: Data) {
+    public var metadata: [String: String]
+
+    public init?(der: Data, metadata: [String: String] = [:]) {
         self.rawDER = der
         self.sha1Fingerprint = Data(Insecure.SHA1.hash(data: der))
+        self.metadata = metadata
 
         // Certificate: SEQUENCE { tbsCertificate, signatureAlgorithm, signatureValue }
         guard let certTLV = ASN1Helper.parseTLV(from: der), certTLV.tag == 0x30 else { return nil }
