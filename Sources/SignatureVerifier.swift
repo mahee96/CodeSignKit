@@ -228,10 +228,10 @@ public final class SignatureVerifier {
         if !FileManager.default.fileExists(atPath: codeSigURL.path) {
             errors.append("Missing CodeResources file at \(codeSigURL.path)")
         } else if let resData = try? Data(contentsOf: codeSigURL),
-                  let plist = try? PropertyListSerialization.propertyList(from: resData, options: [], format: nil) as? [String: Any] {
+                  let plist = try? PropertyListSerialization.propertyList(from: resData, options: [], format: nil) as? [String: any Sendable] {
 
             // Check files2 (SHA-256)
-            if let files2 = plist["files2"] as? [String: Any] {
+            if let files2 = plist["files2"] as? [String: any Sendable] {
                 for (relPath, info) in files2 {
                     let fileURL = bundleURL.appendingPathComponent(relPath)
                     guard FileManager.default.fileExists(atPath: fileURL.path) else {
@@ -239,7 +239,7 @@ public final class SignatureVerifier {
                         continue
                     }
 
-                    if let fileDict = info as? [String: Any], let expectedHash = fileDict["hash2"] as? Data {
+                    if let fileDict = info as? [String: any Sendable], let expectedHash = fileDict["hash2"] as? Data {
                         if let fileData = try? Data(contentsOf: fileURL) {
                             let actualHash = Data(SHA256.hash(data: fileData))
                             if actualHash != expectedHash {

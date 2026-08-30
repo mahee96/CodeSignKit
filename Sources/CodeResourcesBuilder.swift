@@ -23,7 +23,7 @@ public final class CodeResourcesBuilder {
 
     public func build() throws -> Data {
         var files: [String: Data] = [:]
-        var files2: [String: [String: Any]] = [:]
+        var files2: [String: [String: any Sendable]] = [:]
 
         let fileManager = FileManager.default
         guard let enumerator = fileManager.enumerator(
@@ -81,7 +81,7 @@ public final class CodeResourcesBuilder {
             }
         }
 
-        let rules: [String: Any] = [
+        let rules: [String: any Sendable] = [
             "^.*": true,
             "^.*\\.lproj/": [
                 "optional": true,
@@ -97,7 +97,7 @@ public final class CodeResourcesBuilder {
             "^version.plist$": true
         ]
 
-        let rules2: [String: Any] = [
+        let rules2: [String: any Sendable] = [
             ".*\\.dSYM($|/)": [
                 "weight": 11.0
             ],
@@ -134,7 +134,7 @@ public final class CodeResourcesBuilder {
         ]
 
 
-        let plistDict: [String: Any] = [
+        let plistDict: [String: any Sendable] = [
             "files" : files,
             "files2": files2,
             "rules" : rules,

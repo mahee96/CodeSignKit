@@ -27,7 +27,7 @@ public enum DEREncoder {
         return Data([tag]) + encodeLength(value.count) + value
     }
 
-    public static func encodeValue(_ value: Any) -> Data? {
+    public static func encodeValue(_ value: any Sendable) -> Data? {
         if let num = value as? NSNumber {
             if CFGetTypeID(num) == CFBooleanGetTypeID() {
                 return encodeTLV(tag: 0x01, value: Data([num.boolValue ? 0x01 : 0x00]))
@@ -49,14 +49,14 @@ public enum DEREncoder {
             return encodeTLV(tag: 0x0C, value: utf8)
         } else if let dataVal = value as? Data {
             return encodeTLV(tag: 0x04, value: dataVal)
-        } else if let arr = value as? [Any] {
+        } else if let arr = value as? [any Sendable] {
             var payload = Data()
             for item in arr {
                 guard let encoded = encodeValue(item) else { return nil }
                 payload.append(encoded)
             }
             return encodeTLV(tag: 0x30, value: payload)
-        } else if let dict = value as? [String: Any] {
+        } else if let dict = value as? [String: any Sendable] {
             var elements: [Data] = []
             for (k, v) in dict {
                 let kData = encodeTLV(tag: 0x0C, value: k.data(using: .utf8) ?? Data())
@@ -78,7 +78,7 @@ public enum DEREncoder {
 
     public static func encodePlistXML(_ xml: String) -> Data? {
         guard let data = xml.data(using: .utf8) else { return nil }
-        guard let plist = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil) as? [String: Any] else {
+        guard let plist = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil) as? [String: any Sendable] else {
             return nil
         }
         return encodeValue(plist)

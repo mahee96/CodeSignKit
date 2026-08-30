@@ -139,7 +139,7 @@ public final class CMSSigner {
 
         // 2e. Apple CDHashes 1 (1.2.840.113635.100.9.1) -> OCTET STRING (XML plist containing cdhashes)
         let truncatedCDHash = cdHash.prefix(20)
-        let plistDict: [String: Any] = ["cdhashes": [truncatedCDHash]]
+        let plistDict: [String: any Sendable] = ["cdhashes": [truncatedCDHash]]
         let plistData = (try? PropertyListSerialization.data(fromPropertyList: plistDict, format: .xml, options: 0)) ?? Data()
         let attrAppleCDHashes1 = ASN1Helper.sequence(
             ASN1Helper.oidAppleCDHashes +

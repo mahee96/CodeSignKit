@@ -151,7 +151,7 @@ public final class CodeSigner {
             let infoPlistURL = bundleURL.appendingPathComponent("Info.plist")
             if let data = try? Data(contentsOf: infoPlistURL) {
                 infoPlistData = data
-                if let plist = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil) as? [String: Any] {
+                if let plist = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil) as? [String: any Sendable] {
                     if let id = plist["CFBundleIdentifier"] as? String {
                         bundleID = id
                     }
