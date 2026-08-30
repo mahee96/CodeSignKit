@@ -84,10 +84,8 @@ public final class MachOParser {
         
         if executableName == nil {
             let plistURL = url.appendingPathComponent("Info.plist")
-            if let dict = NSDictionary(contentsOf: plistURL) as? [String: Any] {
-                executableName = dict["CFBundleExecutable"] as? String
-            } else if let plistData = try? Data(contentsOf: plistURL),
-                      let plist = try? PropertyListSerialization.propertyList(from: plistData, options: [], format: nil) as? [String: Any] {
+            if let plistData = try? Data(contentsOf: plistURL),
+               let plist = try? PropertyListSerialization.propertyList(from: plistData, format: nil) as? [String: Any] {
                 executableName = plist["CFBundleExecutable"] as? String
             }
         }
@@ -95,10 +93,8 @@ public final class MachOParser {
         if executableName == nil {
             // Check Contents/Info.plist (macOS App Bundle structure)
             let contentsPlistURL = url.appendingPathComponent("Contents/Info.plist")
-            if let dict = NSDictionary(contentsOf: contentsPlistURL) as? [String: Any] {
-                executableName = dict["CFBundleExecutable"] as? String
-            } else if let contentsData = try? Data(contentsOf: contentsPlistURL),
-                      let contentsPlist = try? PropertyListSerialization.propertyList(from: contentsData, options: [], format: nil) as? [String: Any] {
+            if let contentsData = try? Data(contentsOf: contentsPlistURL),
+               let contentsPlist = try? PropertyListSerialization.propertyList(from: contentsData, format: nil) as? [String: Any] {
                 executableName = contentsPlist["CFBundleExecutable"] as? String
             }
         }
