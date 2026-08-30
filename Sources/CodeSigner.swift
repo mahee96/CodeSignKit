@@ -66,12 +66,12 @@ public final class CodeSigner {
 
     public static func removeSignature(at url: URL, deep: Bool = true) throws {
         let fileManager = FileManager.default
-        var isDir: ObjCBool = false
-        guard fileManager.fileExists(atPath: url.path, isDirectory: &isDir) else {
+        guard fileManager.fileExists(atPath: url.path) else {
             throw CodeSignerError.invalidPath("Path does not exist: \(url.path)")
         }
+        let isDir = (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true
 
-        if isDir.boolValue {
+        if isDir {
             // 1. Remove _CodeSignature directory from bundle
             let codeSigDir = url.appendingPathComponent("_CodeSignature")
             if fileManager.fileExists(atPath: codeSigDir.path) {
@@ -87,7 +87,7 @@ public final class CodeSigner {
         }
 
         // 3. Deep remove from embedded items if requested
-        if deep && isDir.boolValue {
+        if deep && isDir {
             let embedded = collectEmbeddedItems(in: url)
             for fwURL in embedded.frameworksAndDylibs {
                 try removeSignature(at: fwURL, deep: true)
@@ -100,10 +100,10 @@ public final class CodeSigner {
 
     private static func resolveTarget(at url: URL) -> (bundleURL: URL?, executableURL: URL)? {
         let fileManager = FileManager.default
-        var isDir: ObjCBool = false
-        guard fileManager.fileExists(atPath: url.path, isDirectory: &isDir) else { return nil }
+        guard fileManager.fileExists(atPath: url.path) else { return nil }
+        let isDir = (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true
 
-        if isDir.boolValue {
+        if isDir {
             guard let exec = MachOParser.findExecutable(at: url), MachOParser.isMachOBinary(at: exec) else {
                 return nil
             }
@@ -258,10 +258,9 @@ public final class CodeSigner {
             let mainExecPath = MachOParser.findExecutable(at: appURL)?.standardizedFileURL.path
             for case let fileURL as URL in enumerator {
                 let ext = fileURL.pathExtension.lowercased()
-                var isDir: ObjCBool = false
-                guard fileManager.fileExists(atPath: fileURL.path, isDirectory: &isDir) else { continue }
+                let isDir = (try? fileURL.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true
 
-                if isDir.boolValue {
+                if isDir {
                     if ext == "appex" || ext == "xctest" || ext == "octest" || ext == "app" || ext == "xpc" || ext == "systemextension" || ext == "plugin" {
                         if seenPaths.insert(fileURL.standardizedFileURL.path).inserted {
                             items.appExtensions.append(fileURL)

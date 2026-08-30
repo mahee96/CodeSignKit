@@ -46,8 +46,7 @@ public final class SignatureVerifier {
 
     public static func verify(url: URL, deep: Bool = true, strict: Bool = false) -> VerificationResult {
         let fileManager = FileManager.default
-        var isDir: ObjCBool = false
-        guard fileManager.fileExists(atPath: url.path, isDirectory: &isDir) else {
+        guard fileManager.fileExists(atPath: url.path) else {
             return VerificationResult(
                 isValid: false,
                 path: url.path,
@@ -55,7 +54,8 @@ public final class SignatureVerifier {
             )
         }
 
-        if isDir.boolValue {
+        let isDir = (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true
+        if isDir {
             return verifyBundle(at: url, deep: deep, strict: strict)
         } else {
             do {
