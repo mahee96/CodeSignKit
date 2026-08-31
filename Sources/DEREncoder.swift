@@ -31,7 +31,7 @@ public enum DEREncoder {
         if type(of: value) == Bool.self, let b = value as? Bool {
             return encodeTLV(tag: 0x01, value: Data([b ? 0x01 : 0x00]))
         } else if let num = value as? NSNumber {
-            #if os(macOS) || os(iOS) || os(tvOS) || os(watchOS) || os(visionOS)
+            #if canImport(Darwin)
             if num.objCType.pointee == 0x63 /* 'c' for char/bool */ {
                 return encodeTLV(tag: 0x01, value: Data([num.boolValue ? 0x01 : 0x00]))
             }
