@@ -37,6 +37,13 @@ public final class CodeResourcesBuilder {
         let bundlePath = bundleURL.standardizedFileURL.path
         let bundlePathPrefix = bundlePath.hasSuffix("/") ? bundlePath : bundlePath + "/"
 
+        struct FileEntry {
+            let relativePath: String
+            let url: URL
+        }
+
+        var candidateFiles: [FileEntry] = []
+
         for case let fileURL as URL in enumerator {
             let standardized = fileURL.standardizedFileURL.path
             guard standardized.hasPrefix(bundlePathPrefix) else { continue }
@@ -48,8 +55,6 @@ public final class CodeResourcesBuilder {
             }
 
             // Check if directory
-
-
             let resourceValues = try? fileURL.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .isDirectoryKey])
             if resourceValues?.isDirectory == true {
                 continue
@@ -60,23 +65,30 @@ public final class CodeResourcesBuilder {
                 continue
             }
 
-            // Read file data
-            guard let fileData = try? Data(contentsOf: fileURL) else {
-                continue
-            }
+            candidateFiles.append(FileEntry(relativePath: relativePath, url: fileURL))
+        }
 
-            // SHA-1
-            let sha1Digest = Insecure.SHA1.hash(data: fileData)
-            let sha1Data = Data(sha1Digest)
+        struct HashResult {
+            let relativePath: String
+            let sha1: Data
+            let sha256: Data
+        }
 
-            // SHA-256
-            let sha256Digest = SHA256.hash(data: fileData)
-            let sha256Data = Data(sha256Digest)
+        var hashResults = [HashResult?](repeating: nil, count: candidateFiles.count)
 
-            files[relativePath] = sha1Data
-            if relativePath != "Info.plist" && relativePath != "PkgInfo" {
-                files2[relativePath] = [
-                    "hash2": sha256Data
+        DispatchQueue.concurrentPerform(iterations: candidateFiles.count) { i in
+            let item = candidateFiles[i]
+            let fileData = (try? Data(contentsOf: item.url, options: .alwaysMapped)) ?? (try? Data(contentsOf: item.url)) ?? Data()
+            let sha1 = Data(Insecure.SHA1.hash(data: fileData))
+            let sha256 = Data(SHA256.hash(data: fileData))
+            hashResults[i] = HashResult(relativePath: item.relativePath, sha1: sha1, sha256: sha256)
+        }
+
+        for result in hashResults.compactMap({ $0 }) {
+            files[result.relativePath] = result.sha1
+            if result.relativePath != "Info.plist" && result.relativePath != "PkgInfo" {
+                files2[result.relativePath] = [
+                    "hash2": result.sha256
                 ]
             }
         }
