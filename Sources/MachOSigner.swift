@@ -19,6 +19,7 @@ public final class MachOSigner {
     private let codeResourcesData: Data?
     private let cmsSigner: CMSSigner?
     private let isMainExecutable: Bool
+    private let options: CodeSigningOptions
 
     public init(
         binaryData: Data,
@@ -28,7 +29,8 @@ public final class MachOSigner {
         infoPlistData: Data?,
         codeResourcesData: Data?,
         cmsSigner: CMSSigner?,
-        isMainExecutable: Bool = true
+        isMainExecutable: Bool = true,
+        options: CodeSigningOptions = []
     ) {
         self.binaryData = binaryData
         self.bundleIdentifier = bundleIdentifier
@@ -38,6 +40,7 @@ public final class MachOSigner {
         self.codeResourcesData = codeResourcesData
         self.cmsSigner = cmsSigner
         self.isMainExecutable = isMainExecutable
+        self.options = options
     }
 
 
@@ -223,10 +226,10 @@ public final class MachOSigner {
 
 
         // Slot 2: Requirements
-        let leafCertSHA1 = cmsSigner?.getLeafCertificateSHA1()
-        let reqBlob = RequirementsBuilder.buildDesignatedRequirement(
+        // Compile Designated Requirements
+        let reqBlob = RequirementsCompiler.compileDesignatedRequirement(
             bundleIdentifier: bundleIdentifier,
-            certSHA1: leafCertSHA1
+            teamIdentifier: teamIdentifier
         )
 
 
@@ -252,12 +255,18 @@ public final class MachOSigner {
             derBlob = blob
         }
 
+        var cdFlags = options.rawValue
+        if cmsSigner == nil {
+            cdFlags |= CodeSigningConstants.CS_ADHOC
+        }
+
         // Pass 1: Precalculate exact SuperBlob size & update Mach-O headers
         let dummyCD = CodeDirectoryBuilder(
             binaryData: Data(count: codeLimit),
             codeLimit: codeLimit,
             bundleIdentifier: bundleIdentifier,
             teamIdentifier: teamIdentifier,
+            flags: cdFlags,
             hashType: CodeSigningConstants.CS_HASHTYPE_SHA256,
             pageSizeShift: pageSizeShift,
             execSegBase: textFileOff,
@@ -340,6 +349,7 @@ public final class MachOSigner {
             codeLimit: codeLimit,
             bundleIdentifier: bundleIdentifier,
             teamIdentifier: teamIdentifier,
+            flags: cdFlags,
             hashType: CodeSigningConstants.CS_HASHTYPE_SHA256,
             pageSizeShift: pageSizeShift,
             execSegBase: textFileOff,

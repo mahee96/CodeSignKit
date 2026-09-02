@@ -29,6 +29,7 @@ public struct ASN1Helper {
     public static let oidContentType                   = encodeOID("1.2.840.113549.1.9.3")
     public static let oidMessageDigest                 = encodeOID("1.2.840.113549.1.9.4")
     public static let oidSigningTime                   = encodeOID("1.2.840.113549.1.9.5")
+    public static let oidTimeStampToken                = encodeOID("1.2.840.113549.1.9.16.2.14")
 
     public static let oidSHA256                        = encodeOID("2.16.840.1.101.3.4.2.1")
     public static let oidSHA1                          = encodeOID("1.3.14.3.2.26")
