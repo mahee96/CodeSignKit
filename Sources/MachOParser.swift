@@ -26,32 +26,32 @@ public final class MachOParser {
     private let data: Data
 
     // Magic constants
-    private static let FAT_MAGIC: UInt32              = 0xcafebabe          // FAT binary magic (Big-Endian)
-    private static let FAT_CIGAM: UInt32              = 0xbebafeca          // FAT binary magic (Little-Endian)
-    private static let FAT_MAGIC_64: UInt32           = 0xcafebabf          // 64-bit FAT binary magic (Big-Endian)
-    private static let FAT_CIGAM_64: UInt32           = 0xbfbafeca          // 64-bit FAT binary magic (Little-Endian)
+    private static let FAT_MAGIC: UInt32               = 0xcafebabe          // FAT binary magic (Big-Endian)
+    private static let FAT_CIGAM: UInt32               = 0xbebafeca          // FAT binary magic (Little-Endian)
+    private static let FAT_MAGIC_64: UInt32            = 0xcafebabf          // 64-bit FAT binary magic (Big-Endian)
+    private static let FAT_CIGAM_64: UInt32            = 0xbfbafeca          // 64-bit FAT binary magic (Little-Endian)
 
-    private static let MH_MAGIC: UInt32               = 0xfeedface          // 32-bit Mach-O magic (Big-Endian)
-    private static let MH_CIGAM: UInt32               = 0xcefaedfe          // 32-bit Mach-O magic (Little-Endian)
-    private static let MH_MAGIC_64: UInt32            = 0xfeedfacf          // 64-bit Mach-O magic (Big-Endian)
-    private static let MH_CIGAM_64: UInt32            = 0xcffaedfe          // 64-bit Mach-O magic (Little-Endian)
+    private static let MH_MAGIC: UInt32                = 0xfeedface          // 32-bit Mach-O magic (Big-Endian)
+    private static let MH_CIGAM: UInt32                = 0xcefaedfe          // 32-bit Mach-O magic (Little-Endian)
+    private static let MH_MAGIC_64: UInt32             = 0xfeedfacf          // 64-bit Mach-O magic (Big-Endian)
+    private static let MH_CIGAM_64: UInt32             = 0xcffaedfe          // 64-bit Mach-O magic (Little-Endian)
 
-    private static let LC_CODE_SIGNATURE: UInt32      = 0x1d                // Load command type for code signatures
-    private static let LC_LOAD_DYLIB: UInt32          = 0x0c                // Load command type for load dylib
-    private static let LC_ENCRYPTION_INFO: UInt32     = 0x21                // Load command type for encryption info
-    private static let LC_ENCRYPTION_INFO_64: UInt32  = 0x2c                // Load command type for encryption info (64-bit)
-    private static let LC_MAIN: UInt32                = 0x28 | 0x80000000   // Load command type for entry point offset
-    private static let LC_SEGMENT: UInt32             = 0x01                // Load command type for 32-bit segment
-    private static let LC_SEGMENT_64: UInt32          = 0x19                // Load command type for 64-bit segment
-    private static let LC_VERSION_MIN_IPHONEOS: UInt32= 0x25                // Load command type for min iOS version
-    private static let LC_VERSION_MIN_MACOSX: UInt32  = 0x24                // Load command type for min macOS version
-    private static let LC_VERSION_MIN_TVOS: UInt32    = 0x2f                // Load command type for min tvOS version
-    private static let LC_VERSION_MIN_WATCHOS: UInt32 = 0x30                // Load command type for min watchOS version
-    private static let LC_BUILD_VERSION: UInt32       = 0x32                // Load command type for build version (iOS 12+)
+    private static let LC_CODE_SIGNATURE: UInt32       = 0x1d                // Load command type for code signatures
+    private static let LC_LOAD_DYLIB: UInt32           = 0x0c                // Load command type for load dylib
+    private static let LC_ENCRYPTION_INFO: UInt32      = 0x21                // Load command type for encryption info
+    private static let LC_ENCRYPTION_INFO_64: UInt32   = 0x2c                // Load command type for encryption info (64-bit)
+    private static let LC_MAIN: UInt32                 = 0x28 | 0x80000000   // Load command type for entry point offset
+    private static let LC_SEGMENT: UInt32              = 0x01                // Load command type for 32-bit segment
+    private static let LC_SEGMENT_64: UInt32           = 0x19                // Load command type for 64-bit segment
+    private static let LC_VERSION_MIN_IPHONEOS: UInt32 = 0x25                // Load command type for min iOS version
+    private static let LC_VERSION_MIN_MACOSX: UInt32   = 0x24                // Load command type for min macOS version
+    private static let LC_VERSION_MIN_TVOS: UInt32     = 0x2f                // Load command type for min tvOS version
+    private static let LC_VERSION_MIN_WATCHOS: UInt32  = 0x30                // Load command type for min watchOS version
+    private static let LC_BUILD_VERSION: UInt32        = 0x32                // Load command type for build version (iOS 12+)
 
-    private static let SUPERBLOB_MAGIC: UInt32        = 0xfade0cc0          // SuperBlob signature magic
-    private static let BLOB_MAGIC_REQ: UInt32         = 0xfade7171          // Requirements blob magic
-    private static let BLOB_MAGIC_ENT: UInt32         = 0xfade7172          // Entitlements blob magic
+    private static let SUPERBLOB_MAGIC: UInt32         = 0xfade0cc0          // SuperBlob signature magic
+    private static let BLOB_MAGIC_REQ: UInt32          = 0xfade7171          // Requirements blob magic
+    private static let BLOB_MAGIC_ENT: UInt32          = 0xfade7172          // Entitlements blob magic
 
     public static func isMachOBinary(at url: URL) -> Bool {
         guard let handle = try? FileHandle(forReadingFrom: url) else { return false }
