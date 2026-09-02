@@ -127,9 +127,13 @@ public final class SignatureVerifier {
             errors.append(contentsOf: pageVerification.errors)
         }
 
+        // Read CodeDirectory flags
+        let cdFlags = (cdBlob.count >= 16) ? cdBlob.readUInt32BigEndian(at: 12) : 0
+        let isAdHoc = (cdFlags & CodeSigningConstants.CS_ADHOC) != 0
+
         // Verify CMS Signature
         var signerSubject: String? = nil
-        if let sigBlob = try? parser.extractSignatureBlob() {
+        if let sigBlob = try? parser.extractSignatureBlob(), !sigBlob.isEmpty {
             let cmsResult = verifyCMSSignatureBlob(sigBlob: sigBlob, codeDirectoryBlob: cdBlob)
             signerSubject = cmsResult.signerSubject
             if !cmsResult.isValid {
@@ -137,6 +141,8 @@ public final class SignatureVerifier {
                     errors.append(err)
                 }
             }
+        } else if isAdHoc {
+            signerSubject = "Ad-Hoc Signature"
         } else {
             errors.append("No CMS signature blob found")
         }
@@ -216,15 +222,40 @@ public final class SignatureVerifier {
         let warnings: [String] = []
 
         guard let executableURL = MachOParser.findExecutable(at: bundleURL) else {
+            // Pure resource bundle e.g. *.bundle without Mach-O binary 
+            // thse are usually already sealed by parent CodeResources
+            let codeSigURL = bundleURL.appendingPathComponent("_CodeSignature/CodeResources")
+            if FileManager.default.fileExists(atPath: codeSigURL.path),
+               let resData = try? Data(contentsOf: codeSigURL),
+               let plist = try? PropertyListSerialization.propertyList(from: resData, options: [], format: nil) as? [String: any Sendable] {
+                if let files2 = plist["files2"] as? [String: any Sendable] {
+                    for (relPath, info) in files2 {
+                        let fileURL = bundleURL.appendingPathComponent(relPath)
+                        guard FileManager.default.fileExists(atPath: fileURL.path) else {
+                            errors.append("Sealed resource missing: \(relPath)")
+                            continue
+                        }
+                        if let fileDict = info as? [String: any Sendable], let expectedHash = fileDict["hash2"] as? Data {
+                            if let fileData = try? Data(contentsOf: fileURL) {
+                                let actualHash = Data(SHA256.hash(data: fileData))
+                                if actualHash != expectedHash {
+                                    errors.append("Resource modified: \(relPath)")
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             return VerificationResult(
-                isValid: false,
+                isValid: errors.isEmpty,
                 path: bundleURL.path,
-                errors: ["Could not find executable for bundle at \(bundleURL.path)"]
+                errors: errors,
+                warnings: warnings
             )
         }
 
         // 1. Verify CodeResources sealing
-        let codeSigURL = bundleURL.appendingPathComponent("_CodeSignature").appendingPathComponent("CodeResources")
+        let codeSigURL = bundleURL.appendingPathComponent("_CodeSignature/CodeResources")
         if !FileManager.default.fileExists(atPath: codeSigURL.path) {
             errors.append("Missing CodeResources file at \(codeSigURL.path)")
         } else if let resData = try? Data(contentsOf: codeSigURL),
@@ -257,27 +288,25 @@ public final class SignatureVerifier {
             errors.append(contentsOf: mainResult.errors)
         }
 
-        // 3. Deep verification of embedded frameworks and extensions if requested
+        // 3. Deep verification of embedded frameworks, plugins, sub-bundles, and binaries if requested
         if deep {
-            let frameworksDir = bundleURL.appendingPathComponent("Frameworks")
-            if FileManager.default.fileExists(atPath: frameworksDir.path),
-               let items = try? FileManager.default.contentsOfDirectory(at: frameworksDir, includingPropertiesForKeys: nil) {
-                for item in items {
-                    if item.pathExtension == "framework" || item.pathExtension == "dylib" {
-                        let subResult = verify(url: item, deep: true, strict: strict)
-                        if !subResult.isValid {
-                            errors.append(contentsOf: subResult.errors)
-                        }
+            if let enumerator = FileManager.default.enumerator(
+                at: bundleURL,
+                includingPropertiesForKeys: [.isDirectoryKey],
+                options: [.skipsHiddenFiles]
+            ) {
+                for case let item as URL in enumerator {
+                    if item.standardizedFileURL.path == bundleURL.standardizedFileURL.path ||
+                       item.standardizedFileURL.path == executableURL.standardizedFileURL.path {
+                        continue
                     }
-                }
-            }
+                    let isDir = (try? item.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true
+                    let ext = item.pathExtension.lowercased()
+                    let isSubBundle = isDir && Constants.bundleExtensions.contains(ext) && (MachOParser.findExecutable(at: item) != nil)
+                    let isLooseBinary = !isDir && (Constants.dynamicLibraryExtensions.contains(ext) || MachOParser.isMachOBinary(at: item))
 
-            let pluginsDir = bundleURL.appendingPathComponent("PlugIns")
-            if FileManager.default.fileExists(atPath: pluginsDir.path),
-               let items = try? FileManager.default.contentsOfDirectory(at: pluginsDir, includingPropertiesForKeys: nil) {
-                for item in items {
-                    if item.pathExtension == "appex" {
-                        let subResult = verify(url: item, deep: true, strict: strict)
+                    if isSubBundle || isLooseBinary {
+                        let subResult = verify(url: item, deep: false, strict: strict)
                         if !subResult.isValid {
                             errors.append(contentsOf: subResult.errors)
                         }
