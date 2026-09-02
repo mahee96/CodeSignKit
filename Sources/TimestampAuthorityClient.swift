@@ -25,22 +25,22 @@ public final class TimestampAuthorityClient: @unchecked Sendable {
     // Builds a DER-encoded TimeStampReq for the given digest
     public static func createRequestData(forDigest digest: Data) -> Data {
         // 1. Version 1 (INTEGER 1)
-        let versionDER = ASN1Helper.encodeInteger(1)
+        let versionDER = ASN1Helper.integer(1)
 
         // 2. AlgorithmIdentifier (SHA-256 + NULL)
-        let algoDER = ASN1Helper.encodeAlgorithmIdentifier(oid: oidSHA256)
+        let algoDER = ASN1Helper.algorithmIdentifier(oidData: oidSHA256, hasNullParam: true)
 
         // 3. HashedMessage (OCTET STRING)
-        let hashOctetDER = ASN1Helper.encodeOctetString(digest)
+        let hashOctetDER = ASN1Helper.octetString(digest)
 
         // 4. MessageImprint (SEQUENCE of AlgorithmIdentifier + OctetString)
-        let messageImprintDER = ASN1Helper.encodeSequence(algoDER + hashOctetDER)
+        let messageImprintDER = ASN1Helper.sequence(algoDER + hashOctetDER)
 
         // 5. certReq (BOOLEAN true)
         let certReqDER = Data([0x01, 0x01, 0xff])
 
         // 6. TimeStampReq SEQUENCE
-        return ASN1Helper.encodeSequence(versionDER + messageImprintDER + certReqDER)
+        return ASN1Helper.sequence(versionDER + messageImprintDER + certReqDER)
     }
 
     // Fetches timestamp token asynchronously from TSA URL

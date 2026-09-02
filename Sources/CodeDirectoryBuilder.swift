@@ -154,19 +154,3 @@ public final class CodeDirectoryBuilder {
     }
 }
 
-fileprivate extension Data {
-    mutating func writeUInt32BigEndian(_ value: UInt32, at offset: Int) {
-        var bigEndian = value.bigEndian
-        Swift.withUnsafeBytes(of: &bigEndian) { bytes in
-            self.replaceSubrange(offset..<offset + 4, with: bytes)
-        }
-    }
-
-    mutating func writeUInt64BigEndian(_ value: UInt64, at offset: Int) {
-        var bigEndian = value.bigEndian
-        Swift.withUnsafeBytes(of: &bigEndian) { bytes in
-            self.replaceSubrange(offset..<offset + 8, with: bytes)
-        }
-    }
-}
-

@@ -743,25 +743,3 @@ fileprivate struct ASN1Decoder {
         return results
     }
 }
-
-fileprivate extension Data {
-    func readUInt32(at offset: Int) -> UInt32 {
-        guard offset + 4 <= self.count else { return 0 }
-        return self.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: offset, as: UInt32.self) }
-    }
-    
-    // Read at offset a 64 bit UInt
-    func readUInt64(at offset: Int) -> UInt64 {
-        guard offset + 8 <= self.count else { return 0 }
-        return self.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: offset, as: UInt64.self) }
-    }
-    
-    // Read at offset a 32 bit UInt and convert it to host type (bigEndian)
-    func readUInt32BigEndian(at offset: Int) -> UInt32 {
-        return UInt32(bigEndian: readUInt32(at: offset))
-    }
-
-    func readUInt64BigEndian(at offset: Int) -> UInt64 {
-        return UInt64(bigEndian: readUInt64(at: offset))
-    }
-}

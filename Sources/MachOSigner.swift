@@ -562,38 +562,3 @@ public final class MachOSigner {
         return finalBinary
     }
 }
-
-
-fileprivate extension Data {
-    func readUInt32(at offset: Int) -> UInt32 {
-        guard offset + 4 <= self.count else { return 0 }
-        return self.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: offset, as: UInt32.self) }
-    }
-
-    func readUInt64(at offset: Int) -> UInt64 {
-        guard offset + 8 <= self.count else { return 0 }
-        return self.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: offset, as: UInt64.self) }
-    }
-
-    mutating func writeUInt32(_ value: UInt32, at offset: Int) {
-        var val = value
-        Swift.withUnsafeBytes(of: &val) { bytes in
-            self.replaceSubrange(offset..<offset + 4, with: bytes)
-        }
-    }
-
-    mutating func writeUInt64(_ value: UInt64, at offset: Int) {
-        var val = value
-        Swift.withUnsafeBytes(of: &val) { bytes in
-            self.replaceSubrange(offset..<offset + 8, with: bytes)
-        }
-    }
-
-    mutating func writeUInt32BigEndian(_ value: UInt32, at offset: Int) {
-        var bigEndian = value.bigEndian
-        Swift.withUnsafeBytes(of: &bigEndian) { bytes in
-            self.replaceSubrange(offset..<offset + 4, with: bytes)
-        }
-    }
-
-}

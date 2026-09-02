@@ -525,15 +525,3 @@ public final class SignatureVerifier {
         }
     }
 }
-
-fileprivate extension Data {
-    func readUInt32(at offset: Int) -> UInt32 {
-        guard offset + 4 <= self.count else { return 0 }
-        return self.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: offset, as: UInt32.self) }
-    }
-
-    func readUInt32BigEndian(at offset: Int) -> UInt32 {
-        guard offset + 4 <= self.count else { return 0 }
-        return self.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: offset, as: UInt32.self).bigEndian }
-    }
-}

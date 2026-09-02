@@ -109,19 +109,3 @@ public final class SuperBlobBuilder {
     }
 }
 
-fileprivate extension Data {
-    mutating func writeUInt32BigEndian(_ value: UInt32, at offset: Int) {
-        var bigEndian = value.bigEndian
-        Swift.withUnsafeBytes(of: &bigEndian) { bytes in
-            self.replaceSubrange(offset..<offset + 4, with: bytes)
-        }
-    }
-
-    mutating func appendUInt32BigEndian(_ value: UInt32) {
-        var bigEndian = value.bigEndian
-        Swift.withUnsafeBytes(of: &bigEndian) { bytes in
-            self.append(contentsOf: bytes)
-        }
-    }
-}
-
