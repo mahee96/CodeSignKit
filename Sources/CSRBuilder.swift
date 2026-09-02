@@ -21,8 +21,8 @@ public struct CSRSubject: Sendable {
         country: String = "US",
         state: String = "CA",
         locality: String = "Los Angeles",
-        organization: String = "AltSign",
-        commonName: String = "AltSign"
+        organization: String = "CodeSignKit",
+        commonName: String = "CodeSignKit"
     ) {
         self.country = country
         self.state = state
