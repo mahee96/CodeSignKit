@@ -97,7 +97,7 @@ public final class CMSSigner {
         return leafCertificate?.sha1Fingerprint
     }
 
-    public func sign(codeDirectoryData: Data) throws -> Data {
+    public func sign(codeDirectoryData: Data, timestampToken: Data? = nil) throws -> Data {
         let parser = try PKCS12Parser(p12Data: p12Data, password: password)
 
         guard let leafCert = parser.leafCertificate,
@@ -176,14 +176,24 @@ public final class CMSSigner {
         let sigAlg = ASN1Helper.algorithmIdentifier(oidData: ASN1Helper.oidSha256WithRSAEncryption, hasNullParam: true)
         let sigOctet = ASN1Helper.octetString(signatureData)
 
-        let signerInfo = ASN1Helper.sequence(
-            ASN1Helper.integer(1) + // version 1
-            issuerAndSerial +
-            digestAlg +
-            signedAttrsContextual +
-            sigAlg +
-            sigOctet
-        )
+        var signerInfoContent = ASN1Helper.integer(1) + // version 1
+                                issuerAndSerial +
+                                digestAlg +
+                                signedAttrsContextual +
+                                sigAlg +
+                                sigOctet
+
+        // 5b. Unsigned Attributes [1] IMPLICIT (RFC 3161 Timestamp Token if present)
+        if let timestampToken, !timestampToken.isEmpty {
+            let attrTimestamp = ASN1Helper.sequence(
+                ASN1Helper.oidTimeStampToken +
+                ASN1Helper.set(timestampToken)
+            )
+            let unsignedAttrsContextual = ASN1Helper.contextual(1, content: attrTimestamp, constructed: true)
+            signerInfoContent.append(unsignedAttrsContextual)
+        }
+
+        let signerInfo = ASN1Helper.sequence(signerInfoContent)
 
         // 6. Build Certificates Set [0] IMPLICIT
         var allCertsContent = leafCert.rawDER

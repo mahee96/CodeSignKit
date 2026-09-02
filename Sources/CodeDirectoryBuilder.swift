@@ -17,6 +17,7 @@ public final class CodeDirectoryBuilder {
     private let codeLimit: Int
     private let bundleIdentifier: String
     private let teamIdentifier: String?
+    private let flags: UInt32
     private let hashType: UInt8
     private let hashSize: Int
     private let pageSizeShift: UInt8
@@ -31,6 +32,7 @@ public final class CodeDirectoryBuilder {
         codeLimit: Int,
         bundleIdentifier: String,
         teamIdentifier: String?,
+        flags: UInt32 = 0,
         hashType: UInt8 = CodeSigningConstants.CS_HASHTYPE_SHA256,
         pageSizeShift: UInt8 = 14,
         execSegBase: UInt64 = 0,
@@ -41,6 +43,7 @@ public final class CodeDirectoryBuilder {
         self.codeLimit = codeLimit
         self.bundleIdentifier = bundleIdentifier
         self.teamIdentifier = teamIdentifier
+        self.flags = flags
         self.hashType = hashType
         self.hashSize = (hashType == CodeSigningConstants.CS_HASHTYPE_SHA1) ? 20 : 32
         self.pageSizeShift = pageSizeShift
@@ -92,7 +95,7 @@ public final class CodeDirectoryBuilder {
         cdData.writeUInt32BigEndian(CodeSigningConstants.CSMAGIC_CODEDIRECTORY, at: 0)
         cdData.writeUInt32BigEndian(UInt32(totalSize), at: 4)
         cdData.writeUInt32BigEndian(CodeSigningConstants.CS_SUPPORTED_CD_VERSION, at: 8)
-        cdData.writeUInt32BigEndian(0, at: 12) // flags
+        cdData.writeUInt32BigEndian(flags, at: 12) // flags
         cdData.writeUInt32BigEndian(UInt32(actualHashOffset), at: 16)
         cdData.writeUInt32BigEndian(UInt32(identOffset), at: 20)
         cdData.writeUInt32BigEndian(UInt32(numSpecialSlots), at: 24)
