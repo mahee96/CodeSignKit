@@ -16,6 +16,7 @@ public final class CodeSigner {
         keyData: Data,
         password: String = "",
         teamID: String? = nil,
+        options: CodeSigningOptions = [],
         entitlementProvider: @escaping (String) -> String,
         progress: @escaping () -> Void
     ) throws {
@@ -36,6 +37,7 @@ public final class CodeSigner {
                 relativeTo: appURL,
                 customTeamID: teamID,
                 cmsSigner: cmsSigner,
+                options: options,
                 entitlementProvider: entitlementProvider
             )
             progress()
@@ -48,6 +50,7 @@ public final class CodeSigner {
                 relativeTo: appURL,
                 customTeamID: teamID,
                 cmsSigner: cmsSigner,
+                options: options,
                 entitlementProvider: entitlementProvider
             )
             progress()
@@ -59,6 +62,55 @@ public final class CodeSigner {
             relativeTo: appURL,
             customTeamID: teamID,
             cmsSigner: cmsSigner,
+            options: options,
+            entitlementProvider: entitlementProvider
+        )
+        progress()
+    }
+
+    public static func signAdHoc(
+        appPath: String,
+        options: CodeSigningOptions = .adHoc,
+        entitlementProvider: @escaping (String) -> String = { _ in "" },
+        progress: @escaping () -> Void = {}
+    ) throws {
+        let appURL = URL(fileURLWithPath: appPath).standardizedFileURL
+        guard FileManager.default.fileExists(atPath: appURL.path) else {
+            throw CodeSignerError.invalidPath("App path does not exist: \(appPath)")
+        }
+
+        let embeddedItems = collectEmbeddedItems(in: appURL)
+
+        for itemURL in embeddedItems.frameworksAndDylibs {
+            try signItem(
+                at: itemURL,
+                relativeTo: appURL,
+                customTeamID: nil,
+                cmsSigner: nil,
+                options: options.union(.adHoc),
+                entitlementProvider: entitlementProvider
+            )
+            progress()
+        }
+
+        for appexURL in embeddedItems.appExtensions {
+            try signItem(
+                at: appexURL,
+                relativeTo: appURL,
+                customTeamID: nil,
+                cmsSigner: nil,
+                options: options.union(.adHoc),
+                entitlementProvider: entitlementProvider
+            )
+            progress()
+        }
+
+        try signItem(
+            at: appURL,
+            relativeTo: appURL,
+            customTeamID: nil,
+            cmsSigner: nil,
+            options: options.union(.adHoc),
             entitlementProvider: entitlementProvider
         )
         progress()
@@ -118,7 +170,8 @@ public final class CodeSigner {
         at url: URL,
         relativeTo rootURL: URL,
         customTeamID: String? = nil,
-        cmsSigner: CMSSigner,
+        cmsSigner: CMSSigner?,
+        options: CodeSigningOptions = [],
         entitlementProvider: (String) -> String
     ) throws {
         guard let target = resolveTarget(at: url) else {
@@ -145,7 +198,7 @@ public final class CodeSigner {
         var infoPlistData: Data? = nil
         var codeResourcesData: Data? = nil
         var bundleID = executableURL.lastPathComponent
-        var teamID: String? = (customTeamID?.isEmpty == false) ? customTeamID : cmsSigner.leafCertificate?.organizationalUnit
+        var teamID: String? = (customTeamID?.isEmpty == false) ? customTeamID : cmsSigner?.leafCertificate?.organizationalUnit
 
         if let bundleURL = bundleURL {
             let infoPlistURL = bundleURL.appendingPathComponent("Info.plist")
@@ -197,7 +250,8 @@ public final class CodeSigner {
             infoPlistData: infoPlistData,
             codeResourcesData: codeResourcesData,
             cmsSigner: cmsSigner,
-            isMainExecutable: isMain
+            isMainExecutable: isMain,
+            options: options
         )
 
 
@@ -220,77 +274,51 @@ public final class CodeSigner {
         let fileManager = FileManager.default
         var seenPaths = Set<String>()
 
-        // 1. Frameworks directory
-        let frameworksURL = appURL.appendingPathComponent("Frameworks")
-        if let contents = try? fileManager.contentsOfDirectory(at: frameworksURL, includingPropertiesForKeys: nil) {
-            for item in contents {
-                let ext = item.pathExtension.lowercased()
-                if ext == "framework" || ext == "dylib" {
-                    if seenPaths.insert(item.standardizedFileURL.path).inserted {
-                        items.frameworksAndDylibs.append(item)
-                    }
-                }
-            }
-        }
+        let mainExecPath = MachOParser.findExecutable(at: appURL)?.standardizedFileURL.path
 
-        // 2. Known extension and sub-app directories
-        let extensionDirs = ["PlugIns", "Extensions", "XPCServices", "Watch", "AppClips"]
-        for dirName in extensionDirs {
-            let dirURL = appURL.appendingPathComponent(dirName)
-            if let contents = try? fileManager.contentsOfDirectory(at: dirURL, includingPropertiesForKeys: nil) {
-                for item in contents {
-                    let ext = item.pathExtension.lowercased()
-                    if ext == "appex" || ext == "xctest" || ext == "octest" || ext == "app" || ext == "xpc" {
-                        if seenPaths.insert(item.standardizedFileURL.path).inserted {
-                            items.appExtensions.append(item)
-                        }
-                    } else if ext == "framework" || ext == "dylib" {
-                        if seenPaths.insert(item.standardizedFileURL.path).inserted {
-                            items.frameworksAndDylibs.append(item)
-                        }
-                    }
-                }
-            }
-        }
-
-        // 3. Deep scan entire bundle for loose Mach-O binaries, dylibs, nested bundles, or plugins
-        if let enumerator = fileManager.enumerator(at: appURL, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsPackageDescendants]) {
-            let mainExecPath = MachOParser.findExecutable(at: appURL)?.standardizedFileURL.path
+        if let enumerator = fileManager.enumerator(
+            at: appURL,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles]
+        ) {
             for case let fileURL as URL in enumerator {
+                let standardizedURL = fileURL.standardizedFileURL
+                let path = standardizedURL.path
+                if path == appURL.standardizedFileURL.path || path == mainExecPath {
+                    continue
+                }
+
                 let ext = fileURL.pathExtension.lowercased()
                 let isDir = (try? fileURL.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true
 
                 if isDir {
-                    if ext == "appex" || ext == "xctest" || ext == "octest" || ext == "app" || ext == "xpc" || ext == "systemextension" || ext == "plugin" {
-                        if seenPaths.insert(fileURL.standardizedFileURL.path).inserted {
-                            items.appExtensions.append(fileURL)
-                        }
-                        enumerator.skipDescendants()
-                    } else if ext == "framework" || ext == "kext" {
-                        if seenPaths.insert(fileURL.standardizedFileURL.path).inserted {
-                            items.frameworksAndDylibs.append(fileURL)
-                        }
-                        enumerator.skipDescendants()
-                    } else if ext == "bundle" {
-                        if resolveTarget(at: fileURL) != nil {
-                            if seenPaths.insert(fileURL.standardizedFileURL.path).inserted {
-                                items.frameworksAndDylibs.append(fileURL)
+                    if Constants.bundleExtensions.contains(ext) {
+                        if Constants.frameworkBundleExtensions.contains(ext) {
+                            if seenPaths.insert(path).inserted {
+                                items.frameworksAndDylibs.append(standardizedURL)
+                            }
+                        } else {
+                            if seenPaths.insert(path).inserted {
+                                items.appExtensions.append(standardizedURL)
                             }
                         }
-                        enumerator.skipDescendants()
                     }
                 } else {
-                    // Regular file: if it is a .dylib or any Mach-O binary (and not the main executable)
-                    let filePath = fileURL.standardizedFileURL.path
-                    if filePath != mainExecPath {
-                        if ext == "dylib" || ext == "so" || MachOParser.isMachOBinary(at: fileURL) {
-                            if seenPaths.insert(filePath).inserted {
-                                items.frameworksAndDylibs.append(fileURL)
-                            }
+                    if Constants.dynamicLibraryExtensions.contains(ext) || MachOParser.isMachOBinary(at: fileURL) {
+                        if seenPaths.insert(path).inserted {
+                            items.frameworksAndDylibs.append(standardizedURL)
                         }
                     }
                 }
             }
+        }
+
+        // Sort items bottom-up so that nested children are signed before their parent bundles
+        items.frameworksAndDylibs.sort {
+            $0.pathComponents.count > $1.pathComponents.count
+        }
+        items.appExtensions.sort {
+            $0.pathComponents.count > $1.pathComponents.count
         }
 
         return items
