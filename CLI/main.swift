@@ -191,8 +191,7 @@ case "sign":
                 entitlementsXML: entitlementsXML,
                 infoPlistData: nil,
                 codeResourcesData: nil,
-                cmsSigner: cmsSigner,
-                isMainExecutable: true
+                cmsSigner: cmsSigner
             )
             let signed = try signer.sign()
             try signed.write(to: targetURL, options: .atomic)

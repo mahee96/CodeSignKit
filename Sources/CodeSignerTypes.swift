@@ -69,6 +69,12 @@ public enum CodeSigningConstants {
 
     // Executable Segment Flags
     public static let CS_EXECSEG_MAIN_BINARY: UInt64      = 0x1
+    public static let CS_EXECSEG_ALLOW_UNSIGNED: UInt64   = 0x10
+
+    // Mach-O File Types
+    public static let MH_EXECUTE: UInt32                  = 0x02
+    public static let MH_DYLIB: UInt32                    = 0x06
+    public static let MH_BUNDLE: UInt32                   = 0x08
 
 
     // Slot Numbers

@@ -89,8 +89,7 @@ struct SignatureVerifierTests {
             entitlementsXML: "<plist><dict><key>get-task-allow</key><true/></dict></plist>",
             infoPlistData: nil,
             codeResourcesData: nil,
-            cmsSigner: cms,
-            isMainExecutable: true
+            cmsSigner: cms
         )
 
         var signedData = try signer.sign()

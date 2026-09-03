@@ -18,7 +18,6 @@ public final class MachOSigner {
     private let infoPlistData: Data?
     private let codeResourcesData: Data?
     private let cmsSigner: CMSSigner?
-    private let isMainExecutable: Bool
     private let options: CodeSigningOptions
 
     public init(
@@ -29,7 +28,6 @@ public final class MachOSigner {
         infoPlistData: Data?,
         codeResourcesData: Data?,
         cmsSigner: CMSSigner?,
-        isMainExecutable: Bool = true,
         options: CodeSigningOptions = []
     ) {
         self.binaryData = binaryData
@@ -39,7 +37,6 @@ public final class MachOSigner {
         self.infoPlistData = infoPlistData
         self.codeResourcesData = codeResourcesData
         self.cmsSigner = cmsSigner
-        self.isMainExecutable = isMainExecutable
         self.options = options
     }
 
@@ -155,6 +152,8 @@ public final class MachOSigner {
         let sizeofcmds = swap ? workingData.readUInt32(at: 20).byteSwapped : workingData.readUInt32(at: 20)
 
         let cputype = swap ? workingData.readUInt32(at: 4).byteSwapped : workingData.readUInt32(at: 4)
+        let filetype = swap ? workingData.readUInt32(at: 12).byteSwapped : workingData.readUInt32(at: 12)
+        let isExecutable = (filetype == CodeSigningConstants.MH_EXECUTE)
         let pageSizeShift: UInt8 = (cputype == 0x0100000c || cputype == 12) ? 14 : 12
 
         var linkeditCmdOffset: Int? = nil
@@ -271,7 +270,7 @@ public final class MachOSigner {
             pageSizeShift: pageSizeShift,
             execSegBase: textFileOff,
             execSegLimit: textFileSize,
-            execSegFlags: isMainExecutable ? (CodeSigningConstants.CS_EXECSEG_MAIN_BINARY | 0x10) : 0
+            execSegFlags: isExecutable ? (CodeSigningConstants.CS_EXECSEG_MAIN_BINARY | CodeSigningConstants.CS_EXECSEG_ALLOW_UNSIGNED) : 0
         )
 
         if let infoPlistData { dummyCD.setSpecialSlot(CodeSigningConstants.CSSLOT_INFOSLOT, data: infoPlistData) }
@@ -354,7 +353,7 @@ public final class MachOSigner {
             pageSizeShift: pageSizeShift,
             execSegBase: textFileOff,
             execSegLimit: textFileSize,
-            execSegFlags: isMainExecutable ? (CodeSigningConstants.CS_EXECSEG_MAIN_BINARY | 0x10) : 0
+            execSegFlags: isExecutable ? (CodeSigningConstants.CS_EXECSEG_MAIN_BINARY | CodeSigningConstants.CS_EXECSEG_ALLOW_UNSIGNED) : 0
         )
 
         if let infoPlistData { realCD.setSpecialSlot(CodeSigningConstants.CSSLOT_INFOSLOT, data: infoPlistData) }

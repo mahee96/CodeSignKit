@@ -239,8 +239,6 @@ public final class CodeSigner {
         // Read executable data
         let binaryData = try Data(contentsOf: executableURL)
 
-        let isMain = (url.path == rootURL.path)
-
         // Sign Mach-O binary
         let machOSigner = MachOSigner(
             binaryData: binaryData,
@@ -250,7 +248,6 @@ public final class CodeSigner {
             infoPlistData: infoPlistData,
             codeResourcesData: codeResourcesData,
             cmsSigner: cmsSigner,
-            isMainExecutable: isMain,
             options: options
         )
 

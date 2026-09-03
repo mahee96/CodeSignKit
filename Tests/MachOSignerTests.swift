@@ -170,8 +170,7 @@ struct MachOSignerTests {
             entitlementsXML: "<plist><dict><key>get-task-allow</key><true/></dict></plist>",
             infoPlistData: nil,
             codeResourcesData: nil,
-            cmsSigner: nil,
-            isMainExecutable: true
+            cmsSigner: nil
         )
 
         let signedBinary = try signer.sign()
@@ -237,8 +236,7 @@ struct MachOSignerTests {
             entitlementsXML: "<plist><dict><key>get-task-allow</key><true/></dict></plist>",
             infoPlistData: nil,
             codeResourcesData: nil,
-            cmsSigner: cms,
-            isMainExecutable: true
+            cmsSigner: cms
         )
 
         let signedData = try signer.sign()
@@ -289,8 +287,7 @@ struct MachOSignerTests {
             entitlementsXML: "<plist><dict><key>get-task-allow</key><true/></dict></plist>",
             infoPlistData: dummyPlist,
             codeResourcesData: codeResData,
-            cmsSigner: cms,
-            isMainExecutable: true
+            cmsSigner: cms
         )
 
         let signedData = try signer.sign()
@@ -329,8 +326,7 @@ struct MachOSignerTests {
             entitlementsXML: "<plist><dict><key>get-task-allow</key><true/></dict></plist>",
             infoPlistData: nil,
             codeResourcesData: nil,
-            cmsSigner: cms,
-            isMainExecutable: true
+            cmsSigner: cms
         )
 
         let signedData = try signer.sign()
