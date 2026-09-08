@@ -39,4 +39,58 @@ public enum Constants {
         "dylib", 
         "so"
     ]
+
+    // Default code signing resource rules for v1 (files)
+    public static let defaultCodeResourcesRules: [String: any Sendable] = [
+        "^.*": true,
+        "^.*\\.lproj/": [
+            "optional": true,
+            "weight": 1000.0
+        ],
+        "^.*\\.lproj/locversion.plist$": [
+            "omit": true,
+            "weight": 1100.0
+        ],
+        "^Base\\.lproj/": [
+            "weight": 1010.0
+        ],
+        "^version.plist$": true
+    ]
+
+    // Default code signing resource rules for v2 (files2)
+    public static let defaultCodeResourcesRules2: [String: any Sendable] = [
+        ".*\\.dSYM($|/)": [
+            "weight": 11.0
+        ],
+        "^(.*/)?\\.DS_Store$": [
+            "omit": true,
+            "weight": 2000.0
+        ],
+        "^.*": true,
+        "^.*\\.lproj/": [
+            "optional": true,
+            "weight": 1000.0
+        ],
+        "^.*\\.lproj/locversion.plist$": [
+            "omit": true,
+            "weight": 1100.0
+        ],
+        "^Base\\.lproj/": [
+            "weight": 1010.0
+        ],
+        "^Info\\.plist$": [
+            "omit": true,
+            "weight": 20.0
+        ],
+        "^PkgInfo$": [
+            "omit": true,
+            "weight": 20.0
+        ],
+        "^embedded\\.provisionprofile$": [
+            "weight": 20.0
+        ],
+        "^version\\.plist$": [
+            "weight": 20.0
+        ]
+    ]
 }

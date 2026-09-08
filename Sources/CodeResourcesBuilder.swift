@@ -15,14 +15,23 @@ public final class CodeResourcesBuilder {
 
     private let bundleURL: URL
     private let executableName: String?
+    private let rules: [String: any Sendable]
+    private let rules2: [String: any Sendable]
 
-    public init(bundleURL: URL, executableName: String?) {
+    public init(
+        bundleURL: URL,
+        executableName: String?,
+        rules: [String: any Sendable] = Constants.defaultCodeResourcesRules,
+        rules2: [String: any Sendable] = Constants.defaultCodeResourcesRules2
+    ) {
         self.bundleURL = bundleURL
         self.executableName = executableName
+        self.rules = rules
+        self.rules2 = rules2
     }
 
     public func build() throws -> Data {
-        var files: [String: Data] = [:]
+        var files: [String: any Sendable] = [:]
         var files2: [String: [String: any Sendable]] = [:]
 
         let fileManager = FileManager.default
@@ -84,67 +93,33 @@ public final class CodeResourcesBuilder {
             hashResults[i] = HashResult(relativePath: item.relativePath, sha1: sha1, sha256: sha256)
         }
 
+        let compiledRules = rules.compactMap { CompiledRule(pattern: $0.key, config: $0.value) }
+        let compiledRules2 = rules2.compactMap { CompiledRule(pattern: $0.key, config: $0.value) }
+
         for result in hashResults.compactMap({ $0 }) {
-            files[result.relativePath] = result.sha1
-            if result.relativePath != "Info.plist" && result.relativePath != "PkgInfo" {
-                files2[result.relativePath] = [
+            let eval1 = Self.evaluate(path: result.relativePath, against: compiledRules)
+            if !eval1.omit {
+                if eval1.optional {
+                    files[result.relativePath] = [
+                        "hash": result.sha1,
+                        "optional": true
+                    ]
+                } else {
+                    files[result.relativePath] = result.sha1
+                }
+            }
+
+            let eval2 = Self.evaluate(path: result.relativePath, against: compiledRules2)
+            if !eval2.omit {
+                var entry: [String: any Sendable] = [
                     "hash2": result.sha256
                 ]
+                if eval2.optional {
+                    entry["optional"] = true
+                }
+                files2[result.relativePath] = entry
             }
         }
-
-        let rules: [String: any Sendable] = [
-            "^.*": true,
-            "^.*\\.lproj/": [
-                "optional": true,
-                "weight": 1000.0
-            ],
-            "^.*\\.lproj/locversion.plist$": [
-                "omit": true,
-                "weight": 1100.0
-            ],
-            "^Base\\.lproj/": [
-                "weight": 1010.0
-            ],
-            "^version.plist$": true
-        ]
-
-        let rules2: [String: any Sendable] = [
-            ".*\\.dSYM($|/)": [
-                "weight": 11.0
-            ],
-            "^(.*/)?\\.DS_Store$": [
-                "omit": true,
-                "weight": 2000.0
-            ],
-            "^.*": true,
-            "^.*\\.lproj/": [
-                "optional": true,
-                "weight": 1000.0
-            ],
-            "^.*\\.lproj/locversion.plist$": [
-                "omit": true,
-                "weight": 1100.0
-            ],
-            "^Base\\.lproj/": [
-                "weight": 1010.0
-            ],
-            "^Info\\.plist$": [
-                "omit": true,
-                "weight": 20.0
-            ],
-            "^PkgInfo$": [
-                "omit": true,
-                "weight": 20.0
-            ],
-            "^embedded\\.provisionprofile$": [
-                "weight": 20.0
-            ],
-            "^version\\.plist$": [
-                "weight": 20.0
-            ]
-        ]
-
 
         let plistDict: [String: any Sendable] = [
             "files" : files,
@@ -154,6 +129,63 @@ public final class CodeResourcesBuilder {
         ]
 
         return try PropertyListSerialization.data(fromPropertyList: plistDict, format: .xml, options: 0)
+    }
+
+    private struct CompiledRule {
+        let pattern: String
+        let regex: NSRegularExpression
+        let weight: Double
+        let omit: Bool
+        let optional: Bool
+
+        init?(pattern: String, config: any Sendable) {
+            guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
+            self.pattern = pattern
+            self.regex = regex
+
+            if let dict = config as? [String: any Sendable] {
+                self.weight = (dict["weight"] as? Double) ?? (dict["weight"] as? NSNumber)?.doubleValue ?? 1.0
+                self.omit = (dict["omit"] as? Bool) ?? false
+                self.optional = (dict["optional"] as? Bool) ?? false
+            } else if let boolVal = config as? Bool {
+                self.weight = 1.0
+                self.omit = !boolVal
+                self.optional = false
+            } else {
+                self.weight = 1.0
+                self.omit = false
+                self.optional = false
+            }
+        }
+
+        func matches(_ path: String) -> Bool {
+            let range = NSRange(path.startIndex..<path.endIndex, in: path)
+            return regex.firstMatch(in: path, options: [], range: range) != nil
+        }
+    }
+
+    private struct RuleEvaluation {
+        let omit: Bool
+        let optional: Bool
+    }
+
+    private static func evaluate(path: String, against rules: [CompiledRule]) -> RuleEvaluation {
+        var bestWeight: Double = -Double.infinity
+        var winningRule: CompiledRule?
+
+        for rule in rules {
+            if rule.matches(path) {
+                if rule.weight > bestWeight {
+                    bestWeight = rule.weight
+                    winningRule = rule
+                }
+            }
+        }
+
+        guard let winner = winningRule else {
+            return RuleEvaluation(omit: false, optional: false)
+        }
+        return RuleEvaluation(omit: winner.omit, optional: winner.optional)
     }
 }
 
