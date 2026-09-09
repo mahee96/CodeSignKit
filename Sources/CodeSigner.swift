@@ -20,7 +20,7 @@ public final class CodeSigner {
         entitlementProvider: @escaping (String) -> String,
         progress: @escaping () -> Void
     ) throws {
-        let appURL = URL(fileURLWithPath: appPath).standardizedFileURL
+        let appURL = URL(fileURLWithPath: appPath).resolvingSymlinksInPath()
         guard FileManager.default.fileExists(atPath: appURL.path) else {
             throw CodeSignerError.invalidPath("App path does not exist: \(appPath)")
         }
@@ -74,7 +74,7 @@ public final class CodeSigner {
         entitlementProvider: @escaping (String) -> String = { _ in "" },
         progress: @escaping () -> Void = {}
     ) throws {
-        let appURL = URL(fileURLWithPath: appPath).standardizedFileURL
+        let appURL = URL(fileURLWithPath: appPath).resolvingSymlinksInPath()
         guard FileManager.default.fileExists(atPath: appURL.path) else {
             throw CodeSignerError.invalidPath("App path does not exist: \(appPath)")
         }
@@ -180,18 +180,20 @@ public final class CodeSigner {
         }
 
         let fileManager = FileManager.default
-        let bundleURL = target.bundleURL
-        let executableURL = target.executableURL
+        let bundleURL = target.bundleURL?.resolvingSymlinksInPath()
+        let executableURL = target.executableURL.resolvingSymlinksInPath()
 
         // Compute relative path from root
-        let rootPath = rootURL.path.hasSuffix("/") ? rootURL.path : rootURL.path + "/"
+        let rootURLResolved = rootURL.resolvingSymlinksInPath()
+        let urlResolved = url.resolvingSymlinksInPath()
+        let rootPath = rootURLResolved.path.hasSuffix("/") ? rootURLResolved.path : rootURLResolved.path + "/"
         let relPath: String
-        if url.path == rootURL.path {
+        if urlResolved.path == rootURLResolved.path {
             relPath = ""
-        } else if url.path.hasPrefix(rootPath) {
-            relPath = String(url.path.dropFirst(rootPath.count))
+        } else if urlResolved.path.hasPrefix(rootPath) {
+            relPath = String(urlResolved.path.dropFirst(rootPath.count))
         } else {
-            relPath = url.lastPathComponent
+            relPath = urlResolved.lastPathComponent
         }
 
         // Read or build bundle resources
@@ -271,39 +273,44 @@ public final class CodeSigner {
         let fileManager = FileManager.default
         var seenPaths = Set<String>()
 
-        let mainExecPath = MachOParser.findExecutable(at: appURL)?.standardizedFileURL.path
+        let canonicalAppURL = appURL.resolvingSymlinksInPath()
+        let mainExecPath = MachOParser.findExecutable(at: canonicalAppURL)?.resolvingSymlinksInPath().path
 
         if let enumerator = fileManager.enumerator(
-            at: appURL,
+            at: canonicalAppURL,
             includingPropertiesForKeys: [.isDirectoryKey],
             options: [.skipsHiddenFiles]
         ) {
             for case let fileURL as URL in enumerator {
-                let standardizedURL = fileURL.standardizedFileURL
-                let path = standardizedURL.path
-                if path == appURL.standardizedFileURL.path || path == mainExecPath {
+                if fileURL.lastPathComponent.hasPrefix(".") {
+                    continue
+                }
+
+                let canonicalURL = fileURL.resolvingSymlinksInPath()
+                let path = canonicalURL.path
+                if path == canonicalAppURL.path || path == mainExecPath {
                     continue
                 }
 
                 let ext = fileURL.pathExtension.lowercased()
-                let isDir = (try? fileURL.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true
+                let isDir = (try? canonicalURL.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true
 
                 if isDir {
                     if Constants.bundleExtensions.contains(ext) {
                         if Constants.frameworkBundleExtensions.contains(ext) {
                             if seenPaths.insert(path).inserted {
-                                items.frameworksAndDylibs.append(standardizedURL)
+                                items.frameworksAndDylibs.append(canonicalURL)
                             }
                         } else {
                             if seenPaths.insert(path).inserted {
-                                items.appExtensions.append(standardizedURL)
+                                items.appExtensions.append(canonicalURL)
                             }
                         }
                     }
                 } else {
-                    if Constants.dynamicLibraryExtensions.contains(ext) || MachOParser.isMachOBinary(at: fileURL) {
+                    if Constants.dynamicLibraryExtensions.contains(ext) || MachOParser.isMachOBinary(at: canonicalURL) {
                         if seenPaths.insert(path).inserted {
-                            items.frameworksAndDylibs.append(standardizedURL)
+                            items.frameworksAndDylibs.append(canonicalURL)
                         }
                     }
                 }

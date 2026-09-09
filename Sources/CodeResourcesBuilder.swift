@@ -43,7 +43,8 @@ public final class CodeResourcesBuilder {
             throw CodeSignerError.ioError("Failed to enumerate bundle at \(bundleURL.path)")
         }
 
-        let bundlePath = bundleURL.standardizedFileURL.path
+        let canonicalBundleURL = bundleURL.resolvingSymlinksInPath()
+        let bundlePath = canonicalBundleURL.path
         let bundlePathPrefix = bundlePath.hasSuffix("/") ? bundlePath : bundlePath + "/"
 
         struct FileEntry {
@@ -54,7 +55,8 @@ public final class CodeResourcesBuilder {
         var candidateFiles: [FileEntry] = []
 
         for case let fileURL as URL in enumerator {
-            let standardized = fileURL.standardizedFileURL.path
+            let canonicalFileURL = fileURL.resolvingSymlinksInPath()
+            let standardized = canonicalFileURL.path
             guard standardized.hasPrefix(bundlePathPrefix) else { continue }
             let relativePath = String(standardized.dropFirst(bundlePathPrefix.count))
 

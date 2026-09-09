@@ -290,8 +290,10 @@ public final class SignatureVerifier {
 
         // 3. Deep verification of embedded frameworks, plugins, sub-bundles, and binaries if requested
         if deep {
+            let canonicalBundleURL = bundleURL.resolvingSymlinksInPath()
+            let canonicalExecutableURL = executableURL.resolvingSymlinksInPath()
             if let enumerator = FileManager.default.enumerator(
-                at: bundleURL,
+                at: canonicalBundleURL,
                 includingPropertiesForKeys: [.isDirectoryKey],
                 options: [.skipsHiddenFiles]
             ) {
@@ -300,13 +302,13 @@ public final class SignatureVerifier {
                        item.standardizedFileURL.path == executableURL.standardizedFileURL.path {
                         continue
                     }
-                    let isDir = (try? item.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true
+                    let isDir = (try? canonicalItem.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true
                     let ext = item.pathExtension.lowercased()
-                    let isSubBundle = isDir && Constants.bundleExtensions.contains(ext) && (MachOParser.findExecutable(at: item) != nil)
-                    let isLooseBinary = !isDir && (Constants.dynamicLibraryExtensions.contains(ext) || MachOParser.isMachOBinary(at: item))
+                    let isSubBundle = isDir && Constants.bundleExtensions.contains(ext) && (MachOParser.findExecutable(at: canonicalItem) != nil)
+                    let isLooseBinary = !isDir && (Constants.dynamicLibraryExtensions.contains(ext) || MachOParser.isMachOBinary(at: canonicalItem))
 
                     if isSubBundle || isLooseBinary {
-                        let subResult = verify(url: item, deep: false, strict: strict)
+                        let subResult = verify(url: canonicalItem, deep: false, strict: strict)
                         if !subResult.isValid {
                             errors.append(contentsOf: subResult.errors)
                         }
