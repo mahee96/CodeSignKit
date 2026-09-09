@@ -6,7 +6,7 @@ import PackageDescription
 let openSSLBinaryTargets: [Target] = [
     .binaryTarget(
         name: "OpenSSL",
-        url: "https://github.com/krzyzanowskim/OpenSSL/releases/download/3.6.2000/OpenSSL.xcframework.zip",
+        url: "https://github.com/krzyzanowskim/OpenSSL/releases/download/3.6.2000/OpenSSL.xcframework.zip#CodeSignKit",
         checksum: "37846a8bd302cb2443eff47f1045ab844d0cd40bf82cc6159cfad9aa5c3eff9e"
     )
 ]
