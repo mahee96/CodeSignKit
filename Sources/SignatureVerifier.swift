@@ -295,11 +295,15 @@ public final class SignatureVerifier {
             if let enumerator = FileManager.default.enumerator(
                 at: canonicalBundleURL,
                 includingPropertiesForKeys: [.isDirectoryKey],
-                options: [.skipsHiddenFiles]
+                options: []
             ) {
                 for case let item as URL in enumerator {
-                    if item.standardizedFileURL.path == bundleURL.standardizedFileURL.path ||
-                       item.standardizedFileURL.path == executableURL.standardizedFileURL.path {
+                    if item.lastPathComponent.hasPrefix(".") {
+                        continue
+                    }
+                    let canonicalItem = item.resolvingSymlinksInPath()
+                    if canonicalItem.path == canonicalBundleURL.path ||
+                       canonicalItem.path == canonicalExecutableURL.path {
                         continue
                     }
                     let isDir = (try? canonicalItem.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true

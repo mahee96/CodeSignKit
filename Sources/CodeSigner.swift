@@ -279,7 +279,7 @@ public final class CodeSigner {
         if let enumerator = fileManager.enumerator(
             at: canonicalAppURL,
             includingPropertiesForKeys: [.isDirectoryKey],
-            options: [.skipsHiddenFiles]
+            options: []
         ) {
             for case let fileURL as URL in enumerator {
                 if fileURL.lastPathComponent.hasPrefix(".") {
