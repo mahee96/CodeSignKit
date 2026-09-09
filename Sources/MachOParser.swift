@@ -79,27 +79,27 @@ public final class MachOParser {
             return url
         }
         
-        let bundle = Bundle(url: url)
-        var executableName: String? = bundle?.executableURL?.lastPathComponent ?? bundle?.infoDictionary?["CFBundleExecutable"] as? String
-        
-        if executableName == nil {
-            let plistURL = url.appendingPathComponent("Info.plist")
+        // 1. Check Info.plist directly first (authoritative source for CFBundleExecutable)
+        var executableName: String? = nil
+        let plistCandidates = [
+            url.appendingPathComponent("Info.plist"),
+            url.appendingPathComponent("Contents/Info.plist")
+        ]
+        for plistURL in plistCandidates {
             if let plistData = try? Data(contentsOf: plistURL),
-               let plist = try? PropertyListSerialization.propertyList(from: plistData, format: nil) as? [String: any Sendable] {
-                executableName = plist["CFBundleExecutable"] as? String
+               let plist = try? PropertyListSerialization.propertyList(from: plistData, format: nil) as? [String: any Sendable],
+               let exec = plist["CFBundleExecutable"] as? String {
+                executableName = exec
+                break
             }
         }
         
         if executableName == nil {
-            // Check Contents/Info.plist (macOS App Bundle structure)
-            let contentsPlistURL = url.appendingPathComponent("Contents/Info.plist")
-            if let contentsData = try? Data(contentsOf: contentsPlistURL),
-               let contentsPlist = try? PropertyListSerialization.propertyList(from: contentsData, format: nil) as? [String: any Sendable] {
-                executableName = contentsPlist["CFBundleExecutable"] as? String
-            }
+            let bundle = Bundle(url: url)
+            executableName = bundle?.infoDictionary?["CFBundleExecutable"] as? String ?? bundle?.executableURL?.lastPathComponent
         }
 
-        // If executableName is identified from Info.plist, check known candidate paths
+        // 2. If executableName is identified from Info.plist, check known candidate paths
         if let executableName = executableName {
             let candidates = [
                 url.appendingPathComponent(executableName),
@@ -115,8 +115,21 @@ public final class MachOParser {
             }
         }
 
-        // Direct Mach-O fallback: scan immediate children of the bundle directory
+        // 3. Fallback: check candidate matching bundle directory name
+        let bundleBaseName = url.deletingPathExtension().lastPathComponent
+        let namedCandidate = url.appendingPathComponent(bundleBaseName)
+        if FileManager.default.fileExists(atPath: namedCandidate.path), isMachOBinary(at: namedCandidate) {
+            return namedCandidate
+        }
+
+        // 4. Direct Mach-O fallback: scan immediate children (prefer non-dylib binaries first)
         if let contents = try? FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: [.isDirectoryKey]) {
+            for item in contents {
+                let isItemDir = (try? item.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true
+                if !isItemDir && item.pathExtension.lowercased() != "dylib" && isMachOBinary(at: item) {
+                    return item
+                }
+            }
             for item in contents {
                 let isItemDir = (try? item.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true
                 if !isItemDir && isMachOBinary(at: item) {
